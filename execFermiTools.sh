@@ -10,7 +10,9 @@ fi
 if [ -z "$export" ]; then
     VERDATE=$(stat -c %Y $0) #epoch time
     echo -e "\e[32m-- execFermiTools.sh version "$(date +"%Y/%m/%d %H:%M:%S" -d @$VERDATE)" ($VERDATE)\e[m"
-    CPFILE=$(dirname $0)/.oldexecFermiTools/execFermiTools.sh.$VERDATE
+    olddir=$(dirname $0)/.oldexecFermiTools
+    if [ -d $olddir ]; then mkdir -p $olddir; fi
+    CPFILE=$olddir/execFermiTools.sh.$VERDATE
     if ! [ -e "$CPFILE" ]; then cat $0 >$CPFILE; fi
 fi
 echo
@@ -69,7 +71,7 @@ DSSkey(){
 : ${evfile:=${prefix}.fits}
 echo evfile is set to $evfile; echo
 if [ ! -e "$evfile" ]; then
-    echo Warning: evfile does not exist
+    echo Warning: currently evfile does not exist
     DSSkeyfile=$filetobecut
     if [ ! -e "$filetobecut" ]; then
 	DSSkeyfile=$(ls L*_PH00.fits)
@@ -246,15 +248,22 @@ else echo makemodel was skipped; fi
 sleep 3; echo; echo
 
 if [ $skip -lt 7 ]; then
-    gtsrcmaps ptsrc=${ptsrc} emapbnds=no irfs=CALDB \
-	scfile=${scfile} expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
-	bexpmap=${bexpcube} outfile=${srcmap/.fits/_dif.fits} || error gtsrcmaps
-    $(dirname $0)/RemoveSource.py ${srcmdlin} diffuse tmptmp.xml
-    gtsrcmaps emapbnds=no irfs=CALDB \
-	scfile=${scfile} expcube=${lvtime} cmap=${ccube} srcmdl=tmptmp.xml \
-	bexpmap=${bexpcube} outfile=${srcmap} || error gtsrcmaps
-    $(dirname $0)/MergeSrcmap.py ${srcmap} ${srcmap/.fits/_dif.fits}
-    rm tmptmp.xml
+    if [ $ptsrc == "no" ]; then
+	gtsrcmaps ptsrc=${ptsrc} emapbnds=no irfs=CALDB scfile=${scfile} \
+	    expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
+	    bexpmap=${bexpcube} outfile=${srcmap/.fits/_dif.fits} \
+	    || error gtsrcmaps
+	$(dirname $0)/RemoveSource.py ${srcmdlin} diffuse tmptmp.xml
+	gtsrcmaps emapbnds=no irfs=CALDB scfile=${scfile} \
+	    expcube=${lvtime} cmap=${ccube} srcmdl=tmptmp.xml \
+	    bexpmap=${bexpcube} outfile=${srcmap} || error gtsrcmaps
+	$(dirname $0)/MergeSrcmap.py ${srcmap} ${srcmap/.fits/_dif.fits}
+	rm tmptmp.xml
+    else
+	gtsrcmaps emapbnds=no irfs=CALDB scfile=${scfile} \
+	    expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
+	    bexpmap=${bexpcube} outfile=${srcmap} || error gtsrcmaps
+    fi	
     echo "gtsrcmaps done. elapsed time: $SECONDS s"
 else echo gtsrcmaps was skipped; fi 
 
@@ -263,7 +272,7 @@ sleep 3; echo; echo
 if [ $skip -lt 8 ] && [ $skipgtlike -eq 0 ] ; then
     #gtlike refit=${refit} plot=${plot} sfile=${srcmdlout} statistic=${METHOD} \
     # cmap=${srcmap} bexpmap=${bexpcube} expcube=${lvtime} srcmdl=${srcmdlin} \
-    # irfs=CALDB optimizer=${optimizer} srclist="'${slist}'" \
+    # irfs=CALDB optimizer=${optimizer} \
     # ${opres} ${opplo} | tee ${fitso}
 
     $(dirname $0)/Likelihood.py 2>&1 | tee ${fitso}

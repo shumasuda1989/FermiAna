@@ -6,6 +6,8 @@ import time
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
 from UpperLimits import UpperLimits
 from IntegralUpperLimit import calc_int
+from collections import OrderedDict
+from SED import SED 
 
 like = []
 likeobj = []
@@ -51,22 +53,74 @@ def Fit(likelist,likeobjlist,obs,modelin,optimizer,out=None,like1=None,obj=None,
     return False
 
 
+def Formatter(dic,results):
+    s='{'
+    for k, v in dic.items():
+        if k=='Energies':
+            tmps=repr(v).replace('array','').replace('[','').replace(']','')
+            s+="'%s': %s,\n"%(k,tmps)
+        elif k=='Free Parameters':
+            s+="'%s': %s,\n"%(k,repr(v))
+        elif k=='Covariance':
+            s+="'%s': (\n" % k
+            for row in v:
+                s+='('
+                for val in row:
+                    s+='%6g, '%val
+                s+='),\n'
+            s+='),\n'
+        else:
+            s+="'%s': {" % k
+            for kk, vv in v.items():
+                if isinstance(vv,tuple) and len(vv)==2:
+                    s+="'%s': '%6g +/- %6g',\n" % (kk,vv[0],vv[1])
+                elif isinstance(vv,list):
+                    tmps=''
+                    for val in vv:
+                        tmps+='%6g, '%val
+                    s+="'%s': (%s),\n" % (kk,tmps)
+                elif isinstance(vv,str):
+                    s+="'%s': '%s',\n" % (kk,vv)
+                else:
+                    s+="'%s': '%6g',\n" % (kk,vv)
+            s+='},\n'
+    s+='}\n'
+    with open(results,mode='w') as f:
+        f.write(s)
 
-def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,Bayes=False):
+
+def GetSED(like1,sname, min_ts=9, ul_alg='bayesian',be=None, fbasename=None):
+    ### ul_choices = ['frequentist', 'bayesian']
+    try:
+        sed = SED(like1,sname, min_ts=min_ts, bin_edges=be ,ul_algorithm=ul_alg,do_minos=False)
+        if  fbasename is None:
+            fbasename='sed_%s_%c'%(sname.replace(' ',''),ul_alg[0])
+        sed.save(fbasename+'.dat')
+        if os.environ.get('DISPLAY','')!='':
+            sed.plot(fbasename+'.png')
+        return sed.todict()
+
+    except Exception as e:
+        print e
+        pass
+
+
+
+def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,SkipUL=False,Bayes=False,binedge=None):
 
     obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
     nloop=0
     fitxml_pre=modelin
-    fitxml=modelout.replace('output_model','output_fit%d'%(nloop+1))
+    fitxml=modelout.replace('.xml','_fit%d.xml'%(nloop+1))
     while nloop < 3 and not Fit(like,likeobj,obs,fitxml_pre,optimizer,fitxml):
         nloop+=1
         fitxml_pre=fitxml
-        fitxml=modelout.replace('output_model','output_fit%d'%(nloop+1))
+        fitxml=modelout.replace('.xml','_fit%d.xml'%(nloop+1))
 
     if nloop == 3:
         print 'could not converge'
-        fitxml=modelout.replace('output_model','output_fit3')
+        fitxml=modelout.replace('.xml','_fit3.xml')
 
     # pkl=results+'.pkl'
     # pkl=pkl.replace('.dat.pkl','.pkl')
@@ -80,74 +134,88 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     emin=E[0]
     emax=E[-1]
 
-    file = open(results,'w')
-
     print '\nComputing TS values for each extended source\n'
     print 'Photon fluxes are computed for the energy range '+repr(emin)+' to '+repr(emax)+' MeV\n\n'
-    nsts=0
+
+    dic=OrderedDict()
+    free=[]
     for sname in like1.model.srcNames:
         flag=False
-        for param in like1.model[sname].funcs['Spectrum'].paramNames:
-            flag=flag or like1.model[sname].funcs['Spectrum'].params[param].isFree()
-        file.write("'%s': {\n" % sname)
+        src=OrderedDict()
+        func=like1.model[sname].funcs['Spectrum']
+        for param in func.paramNames:
+            flag=(flag or func.params[param].isFree())
+            if func.params[param].isFree():
+                free.append('%s:%s'%(sname,param))
+                src[param]=(func[param],func.params[param].error())
+            else:
+                src[param]=func[param]
+
         flux=like1.flux(sname,emin=emin,emax=emax)
-
-        if flag and sname.find('gll')<0 and sname.find('iso')<0:
-            nsts+=1
+        if flag:
+            if sname.find('gll')<0 and sname.find('iso')<0:
+                src['TS value']=like1.Ts(sname)
             eflx=like1.fluxError(sname,emin=emin,emax=emax)
-            file.write("'Flux': '"+repr(flux)+" +- "+repr(eflx)+"',\n")
-
-            ts=like1.Ts(sname)
-            file.write("'TS value': '"+repr(ts)+"',\n")
+            src['Flux']=(flux,eflx)
         else:
-            file.write("'Flux': '"+repr(flux)+"',\n")
+            src['Flux']=flux
 
         if like1.model[sname].getType() == 'Diffuse':
-            file.write("'Diff Flux':\n")
+            tmplist=[]
             nbin=len(E)-1
             for ie in range(nbin):
-                flux=like1.energyFlux(sname,emin=E[ie],emax=E[ie+1])
-                file.write(repr(flux))
-                if ie != nbin-1:
-                    file.write(' ')
-            file.write('\n')
+                tmplist.append(like1.flux(sname,emin=E[ie],emax=E[ie+1]))
+            src['Diff Flux']=tmplist
+        dic[sname]=src
+    dic['Energies']=E
+    if len(free)>1:
+        dic['Free Parameters']=free
+        dic['Covariance']=like1.covariance
 
-        file.write('},\n')
+    Formatter(dic,results)
 
-    if len(slist) >0:
-        file.write('\nFlux UL:\n')
-    if Bayes:
+
+    '''
+      Calculate Upper Limit. You can choose bayesian or frequentist algorithm.
+
+    '''
+    if Bayes and not SkipUL:
+        ul = {}
+        ullist.append(ul)
+        
         for sname in slist:
             print sname
-            file.write("'%s':\n"%sname)
             try:
-                flux_ul,results = calc_int(like1, sname, emin=emin, emax=emax)
-                s='%lg ph/cm^2/s for emin=%.1f, emax=%.1f (Bayesian UL)'%(flux_ul,results['flux_emin'],results['flux_emax'])
-                file.write(s+'\n')
+                flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
+                print '%lg ph/cm^2/s for emin=%.1f, emax=%.1f (Bayesian UL)'%(flux_ul,ulresults['flux_emin'],ulresults['flux_emax'])
+                ul[sname]=ulresults
+                dic[sname]['Flux UL']=flux_ul
+                dic[sname]['UL algo']='bayesian'
             except RuntimeError as e:
                 import traceback
                 print(traceback.format_exc())
                 print e
-                file.write('could not compute upper limit')
-    else:
+                print('could not compute upper limit')
+    elif not SkipUL:
         ul = UpperLimits(like1)
         ullist.append(ul)
 
         for sname in slist:
             print sname
-            file.write("'%s':\n"%sname)
             try:
                 flux_ul,_=ul[sname].compute(emin=emin,emax=emax)
-                s=repr(ul[sname].results[-1])
-                stmp=s.split(); stmp.pop(0); stmp.insert(0,str(flux_ul))
-                s=' '.join(stmp)
-                file.write(s+'\n')
+                print ul[sname].results[-1]
+                dic[sname]['Flux UL']=flux_ul
+                dic[sname]['UL algo']='frequentist'
+                dic[sname]['UL dlogL']=ul[sname].results[-1].delta
             except RuntimeError as e:
                 import traceback
                 print(traceback.format_exc())
                 print e
-                file.write('could not compute upper limit')
-    file.close()
+                print('could not compute upper limit')
+
+    Formatter(dic,results)
+
     # with open(pkl, mode='ab') as f:
     #     pickle.dump(ul, f)
 
@@ -171,6 +239,21 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     # like1.logLike.writeXml(modelout)
     os.rename(fitxml,modelout)
 
+
+    '''
+      Calculate Fermi SED data points.
+
+    '''
+    if binedge is not None:
+        print 'calculating SED...'
+        ul_alg='bayesian' if Bayes else 'frequentist'
+        for sname in slist:
+            GetSED(like1,sname, min_ts=9, ul_alg=ul_alg,be=binedge)
+        print 'Done!'
+
+
+    return dic
+
     # like2 = BinnedAnalysis(obs,modelout1,optimizer=optimizer2)
     # like2.tol = tolerance2
     # like2obj = pyLike.NewMinuit(like2.logLike)
@@ -181,6 +264,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     # like2.model[sname]
     # like2.flux(sname,emin=emin,emax=emax)
     # like2.fluxError(sname,emin=emin,emax=emax)
+
 
 def GetEnv():
 
@@ -215,10 +299,17 @@ def GetEnv():
 if __name__ == '__main__':
 
     srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,USE_BL_EDISP,refit,plot,slist = GetEnv()
+
+    skipul=True if os.environ.get('SKIP_UL','')!='' else False
     bayes=True if os.environ.get('BAYES','')!='' else False
+    be=os.environ.get('E_bin')
+    if be is not None:
+        import numpy as np
+        be=np.fromstring(be.replace(',',' '),sep=' ')
+        print 'E_bin:',be
 
     start=time.time()
-    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,bayes)
+    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,skipul,bayes,be)
     etime=time.time()-start
     print 'Elapsed time:',etime,'sec'
 

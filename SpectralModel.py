@@ -13,7 +13,7 @@ def GetVal(node,scale=1.):
 def GetErr(node,scale=1.):
     return  float(node.get('error'))*float(node.get('scale'))/scale
 
-def GetIndex(xml=None,root=None):
+def GetIndex(xml=None,root=None): #obsolete
 
     if xml is None and root is None or xml is not None and root is not None:
         exit(1)
@@ -32,7 +32,7 @@ def GetIndex(xml=None,root=None):
 
     return free
 
-def GetCov(fitdatatxt):
+def GetCov(fitdatatxt): #obsolete
 
     d=open(fitdatatxt)
     lines=[s.strip() for s in d.readlines()]
@@ -155,18 +155,27 @@ def ButterflyLP(Norm,E0,nerr,aerr,berr,cov_na,cov_ab,cov_bn):
     #                     +2*da(E)*db(E)*cov_ab
     #                     +2*db(E)*dn*cov_bn))
 
-def SpectralModel(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False,fitdatatxt=None):
+def SpectralModel(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False,resultsdat=None):
     if not hasattr(SpectralModel,'num'):
         SpectralModel.num=0
     SpectralModel.num+=1
 
-    if butt and not os.path.isfile(fitdatatxt):
-        print 'cannot find %s' %fitdatatext
-        exit(1)
     print xml
 
     tree = ET.parse(xml)
     root = tree.getroot()
+
+    if butt:
+        if not os.path.isfile(resultsdat):
+            print 'cannot find %s' % resultsdat
+            exit(1)
+        # free=GetIndex(root=root)
+        # cov=GetCov(fitdatatxt)
+        with open(resultsdat) as f:
+            dic=eval(f.read())
+        free=dic['Free Parameters']
+        cov=np.array(dic['Covariance'])
+        
 
     spectrum = root.find("./source[@name='%s']/spectrum" % sname)
     if spectrum is not None:
@@ -174,26 +183,20 @@ def SpectralModel(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False,fi
         if ftype == 'PowerLaw':
             print 'PowerLaw'
             formula,lpar,lerr,flamb=PowerLaw(spectrum,scale)
-            if butt and os.path.isfile(fitdatatxt):
-                free=GetIndex(root=root)
+            if butt:
                 indn=free.index('%s:Prefactor'%sname)
                 indg=free.index('%s:Index'%sname)
-                cov=GetCov(fitdatatxt)
                 cov_ng=cov[indn,indg]*lpar[3]*lpar[4]
                 elamb=ButterflyPL(lpar[0],lerr[0],lpar[2],lerr[1],cov_ng)
             lpar=lpar[:-2]
-            print lpar
-
 
         elif ftype == 'PLSuperExpCutoff':
             print 'PLSuperExpCutoff'
             formula,lpar,lerr,flamb=PLSuperExpCutoff(spectrum,scale)
             if butt:
-                free=GetIndex(root=root)
                 ind_n=free.index('%s:Prefactor'%sname)
                 ind_g=free.index('%s:Index1'%sname)
                 ind_c=free.index('%s:Cutoff'%sname)
-                cov=GetCov(fitdatatxt)
                 cov_ng=cov[ind_n,ind_g]*lpar[5]*lpar[6]
                 cov_gc=cov[ind_g,ind_c]*lpar[6]*lpar[7]
                 cov_cn=cov[ind_c,ind_n]*lpar[7]*lpar[5]
@@ -206,11 +209,9 @@ def SpectralModel(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False,fi
             print 'LogParabola'
             formula,lpar,lerr,flamb=LogParabola(spectrum,scale)
             if butt:
-                free=GetIndex(root=root)
                 ind_n=free.index('%s:norm'%sname)
                 ind_a=free.index('%s:alpha'%sname)
                 ind_b=free.index('%s:beta'%sname)
-                cov=GetCov(fitdatatxt)
                 cov_na=cov[ind_n,ind_a]*lpar[4]
                 cov_ab=cov[ind_a,ind_b]
                 cov_bn=cov[ind_b,ind_n]*lpar[4]

@@ -11,7 +11,7 @@ def GetVal(node,scale=1.):
 def GetErr(node,scale=1.):
     return  float(node.get('error'))*float(node.get('scale'))/scale
 
-def GetUL(fitdata,source):
+def oldGetUL(fitdata,source):
     f = open(fitdata,'r')
 
     E=-1.
@@ -37,12 +37,26 @@ def GetUL(fitdata,source):
     f.close()
     return E,TS,UL
 
-if len(sys.argv) != 3:
-    print 'usage: %s dir srcname' % sys.argv[0]
+def GetUL(fitdata,source):
+    with open(fitdata) as f:
+        dic=eval(f.read())
+    e=dic['Energies']
+    E=np.sqrt(e[0]*e[-1])
+    TS=float(dic[source]['TS value'])
+    UL=float(dic[source]['Flux UL'])/(e[-1]-e[0])
+    return E,TS,UL
+
+
+if len(sys.argv) != 3 and len(sys.argv) != 4:
+    print 'usage: %s dir srcname [minTS(default:9)]' % sys.argv[0]
     exit(1)
 
 dir=sys.argv[1]
 prefix="_%s" % sys.argv[2]
+if len(sys.argv) == 4:
+    minTS=float(sys.argv[3])
+else:
+    minTS=9.
 prefix=prefix.replace(' ','')
 outputfile=dir+'/SpectrumData'+prefix+'.txt'
 
@@ -70,7 +84,7 @@ for xml in xmllist:
 
     E, TS, UL = GetUL(fitfile,srcname)
 
-    if TS < 9.:
+    if TS < minTS:
         f.write('%s %s 0 -1 # UL!!! TS= %s\n' % (repr(E), repr(UL), repr(TS)) )
         continue
 
