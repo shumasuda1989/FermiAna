@@ -7,14 +7,12 @@ else
     export PYTHONNOUSERSITE=yes
 fi
 
-if [ -z "$export" ]; then
-    VERDATE=$(stat -c %Y $0) #epoch time
-    echo -e "\e[32m-- execFermiTools.sh version "$(date +"%Y/%m/%d %H:%M:%S" -d @$VERDATE)" ($VERDATE)\e[m"
-    olddir=$(dirname $0)/.oldexecFermiTools
-    if [ -d $olddir ]; then mkdir -p $olddir; fi
-    CPFILE=$olddir/execFermiTools.sh.$VERDATE
-    if ! [ -e "$CPFILE" ]; then cat $0 >$CPFILE; fi
-fi
+VERDATE=$(stat -c %Y ${BASH_SOURCE:-$0}) #epoch time
+echo -e "\e[32m-- execFermiTools.sh version "$(date +"%Y/%m/%d %H:%M:%S" -d @$VERDATE)" ($VERDATE)\e[m"
+olddir=$(dirname ${BASH_SOURCE:-$0})/.oldexecFermiTools
+if [ -d $olddir ]; then mkdir -p $olddir; fi
+CPFILE=$olddir/execFermiTools.sh.$VERDATE
+if ! [ -e "$CPFILE" ]; then cat ${BASH_SOURCE:-$0} >$CPFILE; fi
 echo
 
 SECONDS=0
@@ -54,7 +52,7 @@ fi
 if [ "${USE_BL_EDISP}" == "true" ]; then
     export USE_BL_EDISP
 else
-    unset USE_BL_EDISP
+    export -n USE_BL_EDISP; unset USE_BL_EDISP
 fi
 
 DSSkey(){
@@ -109,7 +107,7 @@ if [ -z "$enumbins" ]; then
     enumbins=$(echo "(l($emax)-l($emin))*10/l(10)+0.5" | bc -l)
     enumbins=$(echo "$enumbins/1" | bc)
 fi
-echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys slist="'$slist'"
+echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys optimizer=$optimizer slist="'$slist'"
 echo
 
 if [ "$nosrc" == "yes" ] || [ "$nosrc" == "1" ]; then
@@ -149,11 +147,9 @@ echo
 
 export method METHOD Ra Dec srcrad binsz binszts emin emax enumbins inv_pixsize proj ptsrc coordsys optimizer refit plot slist
 export evfile scfile bexpcube lvtime srcmdlin srcmdlout srcmap cmap ccube tsmap fitso
-if [ -n "$results" ]; then export results; fi
-if [ -n "$specfile" ]; then export specfile; fi
 
 if [ -n "$export" ]; then
-    echo Export done!;  echo
+    echo -e "\e[32;1mExport done!\e[m";  echo
     return
 fi
 

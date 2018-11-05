@@ -112,15 +112,15 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
 
     nloop=0
     fitxml_pre=modelin
-    fitxml=modelout.replace('.xml','_fit%d.xml'%(nloop+1))
+    fitxml=modelout+'_fit%d'%(nloop+1)
     while nloop < 3 and not Fit(like,likeobj,obs,fitxml_pre,optimizer,fitxml):
         nloop+=1
         fitxml_pre=fitxml
-        fitxml=modelout.replace('.xml','_fit%d.xml'%(nloop+1))
+        fitxml=modelout+'_fit%d'%(nloop+1)
 
     if nloop == 3:
         print 'could not converge'
-        fitxml=modelout.replace('.xml','_fit3.xml')
+        fitxml=modelout+'_fit3'
 
     # pkl=results+'.pkl'
     # pkl=pkl.replace('.dat.pkl','.pkl')
@@ -179,24 +179,32 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
       Calculate Upper Limit. You can choose bayesian or frequentist algorithm.
 
     '''
-    if Bayes and not SkipUL:
+    if SkipUL or len(slist)==0:
+        print 'skip UL calculation\n'
+    elif Bayes:
         ul = {}
         ullist.append(ul)
         
         for sname in slist:
             print sname
-            try:
+            flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
+            try_ul_calc=1
+            while flux_ul==-1 and try_ul_calc<=10:
+                par=like1.normPar(sname)
+                par.setBounds(par.getBounds()[0],par.getBounds()[1]*10)
+                like1.syncSrcParams(sname)
                 flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
+                try_ul_calc+=1
+            if flux_ul==-1:
+                print 'could not compute upper limit'
+            else:
                 print '%lg ph/cm^2/s for emin=%.1f, emax=%.1f (Bayesian UL)'%(flux_ul,ulresults['flux_emin'],ulresults['flux_emax'])
                 ul[sname]=ulresults
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='bayesian'
-            except RuntimeError as e:
-                import traceback
-                print(traceback.format_exc())
-                print e
-                print('could not compute upper limit')
-    elif not SkipUL:
+                Formatter(dic,results)
+
+    else:
         ul = UpperLimits(like1)
         ullist.append(ul)
 
@@ -208,13 +216,13 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='frequentist'
                 dic[sname]['UL dlogL']=ul[sname].results[-1].delta
+                Formatter(dic,results)
             except RuntimeError as e:
                 import traceback
                 print(traceback.format_exc())
                 print e
                 print('could not compute upper limit')
 
-    Formatter(dic,results)
 
     # with open(pkl, mode='ab') as f:
     #     pickle.dump(ul, f)
@@ -279,7 +287,7 @@ def GetEnv():
     statistic=env['METHOD']
     specfile=env.get('specfile','counts_spectra.fits')
     results=env.get('results','results.dat')
-    USE_BL_EDISP=env['USE_BL_EDISP']
+    # USE_BL_EDISP=env['USE_BL_EDISP']
     refit=env.get('refit')
     plot=env.get('plot')
 
@@ -289,7 +297,7 @@ def GetEnv():
     else:
         slist=snamelist.split(',')
 
-    return srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,USE_BL_EDISP,refit,plot,slist
+    return srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist
 
 
 
@@ -298,7 +306,7 @@ def GetEnv():
 
 if __name__ == '__main__':
 
-    srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,USE_BL_EDISP,refit,plot,slist = GetEnv()
+    srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 
     skipul=True if os.environ.get('SKIP_UL','')!='' else False
     bayes=True if os.environ.get('BAYES','')!='' else False
@@ -318,7 +326,7 @@ if __name__ == '__main__':
 import sys
 sys.path.append('..')
 from Likelihood import *
-srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,USE_BL_EDISP,refit,plot,slist = GetEnv()
+srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
 #optimizer='MINUIT'
@@ -336,7 +344,7 @@ ul = UpperLimits(like1)
 ul[sname].compute(emin=emin,emax=emax)
 ul[sname].results[-1]
 
-flux_ul,results = calc_int(like1, sname, emin=emin, emax=emax)
+flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
 
 
 
