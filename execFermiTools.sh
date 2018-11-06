@@ -134,7 +134,7 @@ if [ "$chngnm" == "yes" ] || [ "$chngnm" == "1" ]; then
     opplo="specfile=${specfile:=${prefix2}_counts_spectra.fits}"
     : ${fitso:=${prefix2}_fit_data.txt}
 else
-    ## 'chngnm', 'opres' and 'opplo' are no longer obsolete. 
+    ## 'chngnm', 'opres' and 'opplo' are obsolete. 
     ## Simply use 'results', 'specfile' and 'fitso' to overwrite them.
     : ${fitso:=fit_data.txt}
 fi

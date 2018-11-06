@@ -1,18 +1,19 @@
 from matplotlib import pyplot
 import numpy as np
+from numpy import array
 
-from SpectralModel import SpectralModel
+from SpectralModel import SpectralModelXML, SpectralModel, SpectralModelSEDdict
 
-def DrawSED(E,xml,dat,fdatapoint):
+def DrawSED_XML(src,ax,E,xml,dat,fdatapoint,col='b'):
 
     Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
 
-    f,ferr,_=SpectralModel(xml,src,lamb=True,butt=True,resultsdat=dat)
+    f,ferr,_=SpectralModelXML(xml,src,lamb=True,butt=True,resultsdat=dat)
     F=f(Ep)
     Ferr=ferr(Ep,F)
 
-    pyplot.fill_between(Ep,Ep**2*(F-Ferr),Ep**2*(F+Ferr),facecolor='r',alpha=0.2)
-    pyplot.plot(Ep,Ep**2*F,color='r')
+    ax.fill_between(Ep,Ep**2*(F-Ferr),Ep**2*(F+Ferr),facecolor=col,alpha=0.2)
+    ax.plot(Ep,Ep**2*F,color=col)
 
     pf=np.loadtxt(fdatapoint).T
     ul =np.where(pf[3]==-1)
@@ -21,25 +22,91 @@ def DrawSED(E,xml,dat,fdatapoint):
     pf[1]*=pf[0]*pf[0]
     pf[3]*=pf[0]*pf[0]
 
-    pyplot.errorbar(pf[0][nul],pf[1][nul],yerr=pf[3][nul], fmt='o',linestyle='None',capsize=4)
-    pyplot.errorbar(pf[0][ul],pf[1][ul],yerr=pf[1][ul]*0.3, fmt='',linestyle='None',elinewidth=0.75,lolims=True,capsize=4,color='b') #uplims=True
+    ax.errorbar(pf[0][nul],pf[1][nul],yerr=pf[3][nul], fmt='o',linestyle='None',capsize=4,color=col)
+    ax.errorbar(pf[0][ul],pf[1][ul],yerr=pf[1][ul]*0.3, fmt='',linestyle='None',elinewidth=0.75,lolims=True,capsize=4,color=col) #uplims=True
 
+def Spectrum(ax,E,dat,src=None,col='b',xfac=1.,yfac=1.):
+    Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
+
+    if src is None:
+        f,_=SpectralModelSEDdict(dat,lamb=True)
+    else:
+        f,_=SpectralModel(dat,src,lamb=True)
+    F=f(Ep)
+    ax.plot(Ep*xfac,Ep**2*F*yfac,color=col)
+
+
+def Butterfly(ax,E,dat,src,col='b',xfac=1.,yfac=1.):
+    Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
+
+    f,ferr,_=SpectralModel(dat,src,lamb=True,butt=True)
+    F=f(Ep)
+    Ferr=ferr(Ep,F)
+
+    ax.fill_between(Ep*xfac,Ep**2*(F-Ferr)*yfac,Ep**2*(F+Ferr)*yfac,
+                    facecolor=col,alpha=0.2)
+    ax.plot(Ep*xfac,Ep**2*F*yfac,color=col)
+
+def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.):
+    pf=np.loadtxt(fdatapoint).T
+    ul =np.where(pf[3]==-1)
+    nul=np.where(pf[3]!=-1)
+
+    pf[1]*=pf[0]**2
+    pf[3]*=pf[0]**2
+
+    ax.errorbar(pf[0][nul]*xfac,pf[1][nul]*yfac,yerr=pf[3][nul]*yfac, 
+                fmt='o',linestyle='None',capsize=4,color=col)
+    ax.errorbar(pf[0][ul]*xfac,pf[1][ul]*yfac,yerr=pf[1][ul]*0.3*yfac, 
+                fmt='',linestyle='None',elinewidth=0.75,lolims=True,
+                capsize=4,color=col) #uplims=True
+
+
+def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.):
+    with open(dat) as f:
+        dic=eval(f.read())
+    E   = np.array(dic['Energy']['Value'])
+    F   = np.array(dic['dNdE']['Value'])
+    ErrF= np.array(dic['dNdE']['Average_Error'])
+    UL  = np.array(dic['dNdE']['Upper_Limit'])
+    
+    ul =np.where(UL!=-1.)
+    nul=np.where(UL==-1.)
+
+    F   *=E**2
+    ErrF*=E**2
+    UL  *=E**2
+    ax.errorbar(E[nul]*xfac,F[nul]*yfac,yerr=ErrF[nul]*yfac, 
+                fmt='o',linestyle='None',capsize=4,color=col)
+    # ax.plot(E[nul]*xfac,F[nul]*yfac,'o',linestyle='None',color=col)
+    ax.errorbar(E[ul]*xfac,UL[ul]*yfac,yerr=UL[ul]*0.3*yfac, 
+                fmt='',linestyle='None',elinewidth=0.75,lolims=True,
+                capsize=4,color=col) #uplims=True
+
+def DrawSED(ax,E,dat,src=None,fdatapoint=None,col='b',xfac=1.,yfac=1.):
+    if src is None:
+        Spectrum(ax,E,dat,col=col,xfac=xfac,yfac=yfac)
+        SEDGraphFromSEDdict(ax,dat,col=col,xfac=xfac,yfac=yfac)
+    else:
+        Butterfly(ax,E,dat,src,col=col,xfac=xfac,yfac=yfac)
+        SEDGraph(ax,fdatapoint,col=col,xfac=xfac,yfac=yfac)
 
 
 if __name__ == '__main__':
 
     dir='GammaCygni'
-    xml=dir+'/GammaCygni_output_model.xml'
+    # xml=dir+'/GammaCygni_output_model.xml'
     dat=dir+'/results.dat'
-    src="gamma Cygni"
+    src='gamma Cygni'
     fdatapoint=dir+'/DataPoints/SpectrumData_'+src.replace(' ','')+'.txt'
     E=[5e3,5e5]
 
-    pyplot.subplot(111)
-    pyplot.loglog()
+    ax=pyplot.subplot(111)
+    ax.loglog()
 
-    DrawSED(E,xml,dat,fdatapoint)
+    # DrawSED_XML(src,ax,E,xml,dat,fdatapoint)
+    DrawSED(ax,E,dat,src,fdatapoint)
 
-    pyplot.xlabel('E [MeV]')
-    pyplot.ylabel('E2 dN/dE [MeV cm-2 s-1]')
+    ax.set_xlabel('E [MeV]')
+    ax.set_ylabel('E2 dN/dE [MeV cm-2 s-1]')
     pyplot.show()

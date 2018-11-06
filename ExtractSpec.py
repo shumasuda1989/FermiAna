@@ -37,57 +37,14 @@ def oldGetUL(fitdata,source):
     f.close()
     return E,TS,UL
 
-def GetUL(fitdata,source):
-    with open(fitdata) as f:
-        dic=eval(f.read())
+def GetUL(dic,source):
     e=dic['Energies']
     E=np.sqrt(e[0]*e[-1])
     TS=float(dic[source]['TS value'])
     UL=float(dic[source]['Flux UL'])/(e[-1]-e[0])
     return E,TS,UL
 
-
-if len(sys.argv) != 3 and len(sys.argv) != 4:
-    print 'usage: %s dir srcname [minTS(default:9)]' % sys.argv[0]
-    exit(1)
-
-dir=sys.argv[1]
-prefix="_%s" % sys.argv[2]
-if len(sys.argv) == 4:
-    minTS=float(sys.argv[3])
-else:
-    minTS=9.
-prefix=prefix.replace(' ','')
-outputfile=dir+'/SpectrumData'+prefix+'.txt'
-
-fline= "## MeV, cm^-2 s^-1 MeV^-1\n"
-f=open(outputfile,'w')
-f.write(fline)
-
-xmllist=glob.glob('%s/E_*_*/*_output_model*.xml' % dir)
-
-if len(xmllist) <= 0:
-    print 'cannot find any xml files'
-    exit(1)
-
-for xml in xmllist:
-
-    print xml
-    srcname=sys.argv[2]
-    fitfile=xml
-    tmp=fitfile.split('/')
-    tmp[-1]='results_mod.dat'
-    fitfile='/'.join([ str(item) for item in tmp ])
-    if not os.path.exists(fitfile):
-        tmp[-1]='results.dat'
-        fitfile='/'.join([ str(item) for item in tmp ])
-
-    E, TS, UL = GetUL(fitfile,srcname)
-
-    if TS < minTS:
-        f.write('%s %s 0 -1 # UL!!! TS= %s\n' % (repr(E), repr(UL), repr(TS)) )
-        continue
-
+def WriteSpecFromXML(xml,srcname,TS,f):
     tree = ET.parse(xml)
     root = tree.getroot()
 
@@ -133,5 +90,69 @@ for xml in xmllist:
         print "    ERROR!!!!!!! Cannot find %s or Not power law" % srcname
         exit(1)
 
-f.close()
-# os.system('rootl SED.C\(\"%s\"\)' % outputfile)
+    
+def WriteSpec(dic,srcname,f):
+    src=dic[srcname]
+    if src.get('Spectrum','') != 'PowerLaw':
+        print ' ERROR! Not Power Law'
+        exit(1)
+    else:
+        E=float(src['Scale'])*float(src['scale Scale'])
+        flux=[float(x) for x in src['Prefactor'].split('+/-')]
+        v=flux[0]*float(src['scale Prefactor'])
+        e=flux[1]*float(src['scale Prefactor'])
+        TS=float(src['TS value'])
+        f.write('%s %s 0 %s # TS= %s\n' % (str(E), str(v), str(e), repr(TS)) )
+
+
+if __name__ == '__main__':
+
+    if len(sys.argv) not in [3, 4]:
+        print 'usage: %s dir srcname [minTS(default:9)]' % sys.argv[0]
+        exit(1)
+
+    dir=sys.argv[1]
+    srcname=sys.argv[2]
+
+    prefix="_%s" % srcname
+    if len(sys.argv) == 4:
+        minTS=float(sys.argv[3])
+    else:
+        minTS=9.
+    prefix=prefix.replace(' ','')
+    outputfile=dir+'/SpectrumData'+prefix+'.txt'
+
+    fline= "## MeV, cm^-2 s^-1 MeV^-1\n"
+    f=open(outputfile,'w')
+    f.write(fline)
+
+    xmllist=glob.glob('%s/E_*_*/*_output_model*.xml' % dir)
+
+    if len(xmllist) <= 0:
+        print 'cannot find any xml files'
+        exit(1)
+
+    for xml in xmllist:
+
+        print xml
+        fitfile=xml
+        tmp=fitfile.split('/')
+        tmp[-1]='results_mod.dat'
+        fitfile='/'.join([ str(item) for item in tmp ])
+        if not os.path.exists(fitfile):
+            tmp[-1]='results.dat'
+            fitfile='/'.join([ str(item) for item in tmp ])
+
+        with open(fitfile) as fin:
+            dic=eval(fin.read())
+        E, TS, UL = GetUL(dic,srcname)
+
+        if TS < minTS:
+            f.write('%s %s 0 -1 # UL!!! TS= %s\n'%(repr(E), repr(UL), repr(TS)))
+            continue
+        else:
+            # WriteSpecFromXML(xml,srcname,TS,f)
+            WriteSpec(dic,srcname,f)
+
+    f.close()
+
