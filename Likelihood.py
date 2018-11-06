@@ -53,7 +53,7 @@ def Fit(likelist,likeobjlist,obs,modelin,optimizer,out=None,like1=None,obj=None,
     return False
 
 
-def Formatter(dic,results):
+def WriteResult(dic,results):
     s='{'
     for k, v in dic.items():
         if k=='Energies':
@@ -69,6 +69,8 @@ def Formatter(dic,results):
                     s+='%6g, '%val
                 s+='),\n'
             s+='),\n'
+        elif k=='-LogLike':
+            s+="'%s': %f,\n"%(k,v)
         else:
             s+="'%s': {" % k
             for kk, vv in v.items():
@@ -88,6 +90,28 @@ def Formatter(dic,results):
     with open(results,mode='w') as f:
         f.write(s)
 
+def PrintResult(dic):
+    for k, v in dic.items():
+        if k in ['Energies','Free Parameters','Covariance','-LogLike'] \
+           or not isinstance(v,dict):
+            continue
+        else:
+            print k+':'
+            for kk, vv in v.items():
+                if kk in ['Spectrum','Diff Flux'] \
+                   or kk.startswith('scale ')  or 'UL' in kk:
+                    continue
+                elif kk=='Flux':
+                    if isinstance(vv,tuple) and len(vv)==2:
+                        print '%s: %6g +/- %6g photons/cm^2/s'% (kk,vv[0],vv[1])
+                    else:
+                        print '%s: %6g photons/cm^2/s'% (kk,vv)
+                else:
+                    if isinstance(vv,tuple) and len(vv)==2:
+                        print '%s: %6g +/- %6g'% (kk,vv[0],vv[1])
+                    else:
+                        print '%s: %6g'% (kk,vv)
+            print ''
 
 def GetSED(like1,sname, min_ts=9, ul_alg='bayesian',be=None, fbasename=None):
     ### ul_choices = ['frequentist', 'bayesian']
@@ -106,7 +130,7 @@ def GetSED(like1,sname, min_ts=9, ul_alg='bayesian',be=None, fbasename=None):
 
 
 
-def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,SkipUL=False,Bayes=False,binedge=None):
+def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,SkipUL=False,Bayes=False,binedge=None):
 
     obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
@@ -154,6 +178,9 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
         flux=like1.flux(sname,emin=emin,emax=emax)
         if flag:
             if sname.find('gll')<0 and sname.find('iso')<0:
+                for param in func.paramNames:
+                    src['scale '+param]=func.params[param].getScale()
+                src['Spectrum']=func.genericName()
                 src['TS value']=like1.Ts(sname)
             eflx=like1.fluxError(sname,emin=emin,emax=emax)
             src['Flux']=(flux,eflx)
@@ -171,9 +198,10 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     if len(free)>1:
         dic['Free Parameters']=free
         dic['Covariance']=like1.covariance
+    dic['-LogLike']=like1()
 
-    Formatter(dic,results)
-
+    WriteResult(dic,results)
+    PrintResult(dic)
 
     '''
       Calculate Upper Limit. You can choose bayesian or frequentist algorithm.
@@ -202,7 +230,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 ul[sname]=ulresults
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='bayesian'
-                Formatter(dic,results)
+                WriteResult(dic,results)
 
     else:
         ul = UpperLimits(like1)
@@ -216,7 +244,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='frequentist'
                 dic[sname]['UL dlogL']=ul[sname].results[-1].delta
-                Formatter(dic,results)
+                WriteResult(dic,results)
             except RuntimeError as e:
                 import traceback
                 print(traceback.format_exc())
@@ -228,7 +256,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     #     pickle.dump(ul, f)
 
     try:
-        if specfile!='None':
+        if specfile!='None' and specfile!='' and specfile is not None:
             like1.writeCountsSpectra(outfile=specfile,nee=len(E)-1)
     except RuntimeError as e:
         print e
@@ -253,11 +281,25 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
 
     '''
     if binedge is not None:
-        print 'calculating SED...'
         ul_alg='bayesian' if Bayes else 'frequentist'
+        print '\n%s Upper Limit will be calculated' % ul_alg
+        print 'calculating SED...'
         for sname in slist:
             GetSED(like1,sname, min_ts=9, ul_alg=ul_alg,be=binedge)
         print 'Done!'
+
+
+    '''
+      Plot count graph.
+
+    '''
+    if plot=='yes':
+        try:
+            like1.setPlotter('mpl')
+            like1.plot()
+        except:
+            print 'could not plot'
+            pass
 
 
     return dic
@@ -317,9 +359,17 @@ if __name__ == '__main__':
         print 'E_bin:',be
 
     start=time.time()
-    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,slist,skipul,bayes,be)
+    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,skipul,bayes,be)
     etime=time.time()-start
     print 'Elapsed time:',etime,'sec'
+
+    if plot=='yes':
+        try:
+            import code
+            code.InteractiveConsole(globals()).interact()
+        except:
+            pass
+
 
 
 '''
