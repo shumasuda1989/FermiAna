@@ -29,7 +29,7 @@ if [ -z "$srcrad" ]; then
 fi
 METHOD=${method^^}
 if [ $skip -lt 8 ] && [ $skipgtlike -eq 0 ] && [ -z "$slist" ]; then
-    echo "\e[31mslist is not set. ULs will not be calculated.\e[m"
+    echo -e "\e[31mslist is not set. ULs will not be calculated.\e[m"
 fi
 if [ $skip -lt 9 ] && [ $skipgttsmap -eq 0 ]; then
     : ${npix3:?}
@@ -166,9 +166,11 @@ if [ $docut -ne 0 ] || [ $cutonly -ne 0 ] ; then
 	filetobecut="@list.txt"
 	if [ ! -e "list.txt" ]; then ls L*_PH*.fits >list.txt; fi
     fi
+    : ${rad:=INDEF} ${evclass:=128} ${evtype:=3} ${tmin:=INDEF} ${tmax:=INDEF}
+    echo rad=$rad evclass=${evclass} evtype=${evtype} tmin=${tmin} tmax=${tmax}
     gtselect infile=${filetobecut} outfile=${prefix}_filtered.fits \
-	ra=INDEF dec=INDEF rad=INDEF evclass=128 evtype=3 \
-	tmin=INDEF tmax=INDEF emin=${emin} emax=${emax} zmax=90 \
+	ra=INDEF dec=INDEF rad=${rad} evclass=${evclass} evtype=${evtype} \
+	tmin=${tmin} tmax=${tmax} emin=${emin} emax=${emax} zmax=90 \
 	|| error gtselect
     echo "gtselect done. elapsed time: $SECONDS s"
     sleep 3; echo; echo
