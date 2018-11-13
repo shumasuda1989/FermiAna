@@ -10,9 +10,9 @@ fi
 VERDATE=$(stat -c %Y ${BASH_SOURCE:-$0}) #epoch time
 echo -e "\e[32m-- execFermiTools.sh version "$(date +"%Y/%m/%d %H:%M:%S" -d @$VERDATE)" ($VERDATE)\e[m"
 olddir=$(dirname ${BASH_SOURCE:-$0})/.oldexecFermiTools
-if [ -d $olddir ]; then mkdir -p $olddir; fi
+if [ ! -d $olddir ]; then mkdir -p $olddir; fi
 CPFILE=$olddir/execFermiTools.sh.$VERDATE
-if ! [ -e "$CPFILE" ]; then cat ${BASH_SOURCE:-$0} >$CPFILE; fi
+if [ ! -e "$CPFILE" ]; then cat ${BASH_SOURCE:-$0} >$CPFILE; fi
 echo
 
 SECONDS=0

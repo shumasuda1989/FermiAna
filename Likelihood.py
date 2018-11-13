@@ -2,6 +2,7 @@
 
 import os
 import time
+import shutil
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
 from UpperLimits import UpperLimits
@@ -39,7 +40,6 @@ def Fit(likelist,likeobjlist,obs,modelin,optimizer,out=None,like1=None,obj=None,
     if out is not None:
         like1.logLike.writeXml(out)
 
-    print '\n'
     if optimizer=='MINUIT':
         print 'Quality=', like1obj.getQuality()
     print 'ReturnCode=', like1obj.getRetCode()
@@ -145,7 +145,6 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     if nloop == 3:
         print 'could not converge'
         fitxml=modelout+'_fit3'
-
     # pkl=results+'.pkl'
     # pkl=pkl.replace('.dat.pkl','.pkl')
     # with open(pkl, mode='wb') as f:
@@ -159,7 +158,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     emax=E[-1]
 
     print '\nComputing TS values for each extended source\n'
-    print 'Photon fluxes are computed for the energy range '+repr(emin)+' to '+repr(emax)+' MeV\n\n'
+    print 'Photon fluxes are computed for the energy range '+repr(emin)+' to '+repr(emax)+' MeV\n'
 
     dic=OrderedDict()
     free=[]
@@ -208,7 +207,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
 
     '''
     if SkipUL or len(slist)==0:
-        print 'skip UL calculation\n'
+        print 'skip UL calculation'
     elif Bayes:
         ul = {}
         ullist.append(ul)
@@ -269,9 +268,8 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     print '\nTotal number of observed counts:', int(like1.total_nobs())
     print 'Total number of model events:', cnt
     print '\n-log(Likelihood):', like1()
-    print '\n'
 
-    print 'Writing fitted model to', modelout
+    print '\nWriting fitted model to', modelout
     # like1.logLike.writeXml(modelout)
     os.rename(fitxml,modelout)
 
@@ -295,8 +293,10 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     '''
     if plot=='yes':
         try:
+            print ''
             like1.setPlotter('mpl')
             like1.plot()
+            print ''
         except:
             print 'could not plot'
             pass
@@ -350,18 +350,25 @@ if __name__ == '__main__':
 
     srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 
-    skipul=True if os.environ.get('SKIP_UL','')!='' else False
-    bayes=True if os.environ.get('BAYES','')!='' else False
-    be=os.environ.get('E_bin')
+    env=os.environ
+    skipul=True if env.get('SKIP_UL','')!='' else False
+    bayes=True if env.get('BAYES','')!='' else False
+    be=env.get('E_bin')
     if be is not None:
         import numpy as np
         be=np.fromstring(be.replace(',',' '),sep=' ')
         print 'E_bin:',be
 
     start=time.time()
+    if refit == 'yes':
+        optim_refit=env.get('optimizer_prerefit',optimizer)
+        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optim_refit,statistic,None,results,plot,slist,True,bayes,None)
+        print '\nRefit\n'
+        shutil.copy(modelout,modelout+'_refit')
+        modelin=modelout+'_refit'
     Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,skipul,bayes,be)
     etime=time.time()-start
-    print 'Elapsed time:',etime,'sec'
+    print 'Elapsed CPU time:',etime,'sec'
 
     if plot=='yes':
         try:
