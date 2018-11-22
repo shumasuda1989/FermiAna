@@ -32,7 +32,7 @@ def oldGetUL(fitdata,source):
                 semax=tmp[4]
                 emax=float(semax.split("=")[1].replace(',',''))
                 E=np.sqrt(emin*emax)
-                UL=float(tmp[0])/(emax-emin)
+                UL=float(tmp[0])/(emax-emin) ## WRONG calc. Do Not use this.
                 flag=False
     f.close()
     return E,TS,UL
@@ -41,7 +41,8 @@ def GetUL(dic,source):
     e=dic['Energies']
     E=np.sqrt(e[0]*e[-1])
     TS=float(dic[source]['TS value'])
-    UL=float(dic[source]['Flux UL'])/(e[-1]-e[0])
+    # UL=float(dic[source]['Flux UL'])/(-e[0]+e[-1]) ## wrong calc.
+    UL=float(dic[source]['dNdE UL'])
     return E,TS,UL
 
 def WriteSpecFromXML(xml,srcname,TS,f):
@@ -108,7 +109,7 @@ def WriteSpec(dic,srcname,f):
 if __name__ == '__main__':
 
     if len(sys.argv) not in [3, 4]:
-        print 'usage: %s dir srcname [minTS(default:9)]' % sys.argv[0]
+        print 'usage: %s dir srcname [minTS(default:4)]' % sys.argv[0]
         exit(1)
 
     dir=sys.argv[1]
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     if len(sys.argv) == 4:
         minTS=float(sys.argv[3])
     else:
-        minTS=9.
+        minTS=4.
     prefix=prefix.replace(' ','')
     outputfile=dir+'/SpectrumData'+prefix+'.txt'
 

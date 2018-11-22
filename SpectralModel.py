@@ -13,7 +13,7 @@ fs=np.fromstring
 def GetVal(node,scale=1.):
     return  float(node.get('value'))*float(node.get('scale'))/scale
 def GetErr(node,scale=1.):
-    return  float(node.get('error'))*float(node.get('scale'))/scale
+    return  float(node.get('error','0'))*float(node.get('scale'))/scale
 
 def GetIndex(xml=None,root=None): #obsolete
 
@@ -75,8 +75,7 @@ def PowerLawXML(spectrum,scale=1.):
     Scale     = GetVal(NodeScale)
 
     return ("[0]*pow(x/[2],[1])",(Prefactor,Index,Scale,scale_n,scale_g),
-            (EPre,EIndex),
-            lambda x : Prefactor*pow(x/Scale,Index))
+            (EPre,EIndex))
 
 def PowerLaw(src,scale=1.):
     if 'name' in src.keys() and 'method' in src.keys():
@@ -127,8 +126,7 @@ def PLSuperExpCutoffXML(spectrum,scale=1.):
 
     return ("[0]*pow(x/[2],[1])*exp(-pow(x/[3],[4]))",
             (Prefactor,Index1,Scale,Cutoff,Index2,scale_n,scale_g,scale_c), 
-            (EPre,EInd1,ECoff),
-            lambda x : Prefactor*pow(x/Scale,Index1)*exp(-pow(x/Cutoff,Index2)))
+            (EPre,EInd1,ECoff))
 
 def PLSuperExpCutoff(src,scale=1.):
     if 'name' in src.keys() and 'method' in src.keys():
@@ -184,8 +182,7 @@ def LogParabolaXML(spectrum,scale=1.):
     Eb     = GetVal(NodeEb)
 
     return  ("[0]*pow(x/[3],-[1]-[2]*log(x/[3]))",
-             (Norm,Alpha,Beta,Eb,scale_n), (ENorm,EAlpha,EBeta),
-             lambda x : Norm*pow(x/Eb,-Alpha-Beta*log(x/Eb)))
+             (Norm,Alpha,Beta,Eb,scale_n), (ENorm,EAlpha,EBeta))
 
 def LogParabola(src,scale=1.):
     if 'name' in src.keys() and 'method' in src.keys():
@@ -248,7 +245,7 @@ def SpectralModelXML(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False
         ftype=spectrum.get('type')
         if ftype == 'PowerLaw':
             print 'PowerLaw'
-            formula,lpar,lerr,flamb=PowerLawXML(spectrum,scale)
+            formula,lpar,lerr=PowerLawXML(spectrum,scale)
             if butt:
                 indn=free.index('%s:Prefactor'%sname)
                 indg=free.index('%s:Index'%sname)
@@ -258,7 +255,7 @@ def SpectralModelXML(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False
 
         elif ftype == 'PLSuperExpCutoff':
             print 'PLSuperExpCutoff'
-            formula,lpar,lerr,flamb=PLSuperExpCutoffXML(spectrum,scale)
+            formula,lpar,lerr=PLSuperExpCutoffXML(spectrum,scale)
             if butt:
                 ind_n=free.index('%s:Prefactor'%sname)
                 ind_g=free.index('%s:Index1'%sname)
@@ -273,7 +270,7 @@ def SpectralModelXML(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False
 
         elif ftype == 'LogParabola':
             print 'LogParabola'
-            formula,lpar,lerr,flamb=LogParabolaXML(spectrum,scale)
+            formula,lpar,lerr=LogParabolaXML(spectrum,scale)
             if butt:
                 ind_n=free.index('%s:norm'%sname)
                 ind_a=free.index('%s:alpha'%sname)
@@ -286,7 +283,8 @@ def SpectralModelXML(xml,sname,xmin=100.,xmax=5.e5,scale=1,lamb=False,butt=False
             lpar=lpar[:-1]
 
         if lamb:
-            f=flamb
+            ftmp=eval('lambda x,lpar: '+ formula.replace('[','lpar['))
+            f=lambda x: ftmp(x,lpar)
         else:
             from ROOT import TF1
             f=TF1("f%d" % SpectralModelXML.num,formula,xmin,xmax)

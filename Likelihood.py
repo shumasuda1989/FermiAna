@@ -2,7 +2,6 @@
 
 import os
 import time
-import shutil
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
 from UpperLimits import UpperLimits
@@ -113,10 +112,10 @@ def PrintResult(dic):
                         print '%s: %6g'% (kk,vv)
             print ''
 
-def GetSED(like1,sname, min_ts=9, ul_alg='bayesian',be=None, fbasename=None):
+def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasename=None):
     ### ul_choices = ['frequentist', 'bayesian']
     try:
-        sed = SED(like1,sname, min_ts=min_ts, bin_edges=be ,ul_algorithm=ul_alg,do_minos=False)
+        sed = SED(like1,sname, min_ts=min_ts, bin_edges=be, ul_algorithm=ul_alg,do_minos=False, always_upper_limit=True, powerlaw_index=index)
         if  fbasename is None:
             fbasename='sed_%s_%c'%(sname.replace(' ',''),ul_alg[0])
         sed.save(fbasename+'.dat')
@@ -227,6 +226,9 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
             else:
                 print '%lg ph/cm^2/s for emin=%.1f, emax=%.1f (Bayesian UL)'%(flux_ul,ulresults['flux_emin'],ulresults['flux_emax'])
                 ul[sname]=ulresults
+                dic[sname]['dNdE UL']=ulresults['ul_value']
+                dic[sname]['dNdE UL']*=like1.normPar(sname).getScale()
+                ## dN/dE UL at a reference enrergy (ph/cm^2/s)
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='bayesian'
                 WriteResult(dic,results)
@@ -238,8 +240,9 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
         for sname in slist:
             print sname
             try:
-                flux_ul,_=ul[sname].compute(emin=emin,emax=emax)
+                flux_ul,pref_ul=ul[sname].compute(emin=emin,emax=emax)
                 print ul[sname].results[-1]
+                dic[sname]['dNdE UL']=pref_ul*like1.normPar(sname).getScale()
                 dic[sname]['Flux UL']=flux_ul
                 dic[sname]['UL algo']='frequentist'
                 dic[sname]['UL dlogL']=ul[sname].results[-1].delta
@@ -283,7 +286,12 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
         print '\n%s Upper Limit will be calculated' % ul_alg
         print 'calculating SED...'
         for sname in slist:
-            GetSED(like1,sname, min_ts=9, ul_alg=ul_alg,be=binedge)
+            func=like1.model[sname].funcs['Spectrum']
+            if func.genericName()=='PowerLaw':
+                idx=func['Index']*func.params['Index'].getScale()
+            else:
+                idx=-2.
+            GetSED(like1,sname,index=idx,be=binedge,ul_alg=ul_alg)
         print 'Done!'
 
 
@@ -362,9 +370,8 @@ if __name__ == '__main__':
     start=time.time()
     if refit == 'yes':
         optim_refit=env.get('optimizer_prerefit',optimizer)
-        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optim_refit,statistic,None,results,plot,slist,True,bayes,None)
+        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,True,bayes,None)
         print '\nRefit\n'
-        shutil.copy(modelout,modelout+'_refit')
         modelin=modelout+'_refit'
     Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,skipul,bayes,be)
     etime=time.time()-start

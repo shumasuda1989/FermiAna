@@ -48,6 +48,7 @@ if [ -z "$inv_pixsize" ]; then
 fi
 : ${proj:=AIT} ${ptsrc:=yes} ${coordsys:=CEL}
 : ${USE_BL_EDISP:=true} ${refit:=no} ${plot:=no} ${optimizer:=NEWMINUIT}
+: ${optimizerTS:=${optimizer}}
 
 if [ "${USE_BL_EDISP}" == "true" ]; then
     export USE_BL_EDISP
@@ -62,20 +63,27 @@ DSSkey(){
 	str=$(gtvcut table=EVENTS $DSSkeyfile | grep ${dstyp/TYP/VAL})
 	str=$(echo $str | sed 's/DSVAL.: \(.*\)/\1/')
 	echo $str
+    else
+	echo -e "\e[31mcould not set (or find) DSSkeyfile\e[m" >&2
+	exit 1
     fi
 }
 
 : ${prefix:=${srcname}_${method}}
 : ${evfile:=${prefix}.fits}
 echo evfile is set to $evfile; echo
-if [ ! -e "$evfile" ]; then
-    echo Warning: currently evfile does not exist
-    DSSkeyfile=$filetobecut
-    if [ ! -e "$filetobecut" ]; then
-	DSSkeyfile=$(ls L*_PH00.fits)
-    fi
-else
+
+if [ -e "$DSSkeyfile" ]; then :
+elif [ -e "$evfile" ]; then
     DSSkeyfile=$evfile
+elif [ -e "$filetobecut" ]; then
+    DSSkeyfile=$filetobecut
+elif [ -e "$(ls L*_PH00.fits 2>/dev/null)" ]; then
+    DSSkeyfile=$(ls L*_PH00.fits)
+elif [ -e "$((cat list.txt | head -n 1) 2>/dev/null)" ]; then
+    DSSkeyfile=$(cat list.txt | head -n 1)
+else
+    DSSkeyfile=""
 fi
 
 if [ -z "$Ra" ] || [ -z "$Dec" ]; then
@@ -287,7 +295,7 @@ if [ $skip -lt 9 ] && [ $skipgttsmap -eq 0 ] ; then
     $(dirname $0)/FixParamInModel.sh ${srcmdlout} > ${srcmdlfix}
     gttsmap statistic=${METHOD} evfile=${evfile} scfile=${scfile} \
 	bexpmap=${bexpcube} expcube=${lvtime} srcmdl=${srcmdlfix} \
-	cmap=${ccube} outfile=${tsmap} irfs=CALDB optimizer=${optimizer} \
+	cmap=${ccube} outfile=${tsmap} irfs=CALDB optimizer=${optimizerTS} \
 	nxpix=${npix3} nypix=${npix3} binsz=${binszts} xref=${Ra} yref=${Dec} \
 	coordsys=${coordsys} proj=${proj} || error gttsmap
     echo "gttsmap done. elapsed time: $SECONDS s"
