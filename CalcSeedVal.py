@@ -3,7 +3,6 @@ import os
 import xml.etree.ElementTree as ET
 import numpy as np
 import re
-sys.path.append('/home/smasuda/storage/Fermi')
 from BaseFuncForFermiXML import Formatter
 
 infile=sys.argv[1]
@@ -49,27 +48,41 @@ for srcname in srclist:
 
     elif spectrum is not None and spectrum.get('type') == 'PLSuperExpCutoff':
 
+        spectrum.set('type','PowerLaw')
+
         NodePrefactor = spectrum.find("parameter[@name='Prefactor']")
         NodeIndex1    = spectrum.find("parameter[@name='Index1']")
         NodeScale     = spectrum.find("parameter[@name='Scale']")
+        NodeCutoff    = spectrum.find("parameter[@name='Cutoff']")
+        NodeIndex2    = spectrum.find("parameter[@name='Index2']")
         if NodePrefactor is None or NodeIndex1 is None or NodeScale is None:
             print 'ERROR!!!!!!!! Cannot find prefactor or index'
             exit(1)
         Prefactor=float(NodePrefactor.get('value'))
-        Index    =float(NodeIndex1.get('value'))*float(NodeIndex1.get('scale'))
+        Index1   =float(NodeIndex1.get('value'))*float(NodeIndex1.get('scale'))
         Scale    =float(NodeScale.get('value'))*float(NodeScale.get('scale'))
+        Cutoff   =float(NodeCutoff.get('value'))*float(NodeCutoff.get('scale'))
+        Index2   =float(NodeIndex2.get('value'))*float(NodeIndex2.get('scale'))
 
         tmp1=re.sub('e.*','',NodePrefactor.get('scale'))
         tmp2=int(re.sub('.*e','',NodePrefactor.get('scale')))
 
-        NewPrefactor=Prefactor*pow(valScale/Scale,Index)
+        NewPrefactor=Prefactor*pow(valScale/Scale,Index1) \
+                      *np.exp(-pow(valScale/Cutoff,Index2))
+        NewIndex=Index1-Index2*pow(valScale/Cutoff,Index2)
+
         ShiftIndex=int(np.floor(np.log10(NewPrefactor)))
         NewPrefactor=NewPrefactor/pow(10,ShiftIndex)
         NodePrefactor.set('value',str(NewPrefactor))
         NodePrefactor.set('scale','%se%d' % (tmp1,tmp2+ShiftIndex))
         NodePrefactor.set('free' ,'1')
+        NodeIndex1   .set('value',str(-NewIndex))
+        NodeIndex1   .set('name','Index')
         NodeScale    .set('value',str(valScale))
         NodeScale    .set('scale','1.0')
+
+        spectrum.remove(NodeCutoff)
+        spectrum.remove(NodeIndex2)
 
     elif spectrum is not None and spectrum.get('type') == 'LogParabola':
 
