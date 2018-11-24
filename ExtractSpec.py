@@ -108,52 +108,52 @@ def WriteSpec(dic,srcname,f):
 
 if __name__ == '__main__':
 
-    if len(sys.argv) not in [3, 4]:
-        print 'usage: %s dir srcname [minTS(default:4)]' % sys.argv[0]
-        exit(1)
+    minTSdef=4.
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dir", help="Name of directory which includes E_* directories")
+    parser.add_argument("srcnamelist",help="List of names of sources written in xml model file which should be sepalated by comma ','.")
+    parser.add_argument("-t","--minTS",metavar="minTS",type=float,default=minTSdef,help="Minimum TS value under which data points are treated as upper limits (default: %(default)s)")
+    parser.add_argument("-i","--infile",default="results.dat",help="Likelihood data file (default:  %(default)s)")
+    parser.add_argument("-o","--outfile",default='Spec_%s.txt',help="Output file name. '%%s' is replaced by srcname (default: %(default)s)")
+    args = parser.parse_args()
 
-    dir=sys.argv[1]
-    srcname=sys.argv[2]
+    dir=args.dir
+    srcnamelist=args.srcnamelist.split(',')
 
-    prefix="_%s" % srcname
-    if len(sys.argv) == 4:
-        minTS=float(sys.argv[3])
-    else:
-        minTS=4.
-    prefix=prefix.replace(' ','')
-    outputfile=dir+'/SpectrumData'+prefix+'.txt'
+    for srcname in srcnamelist:
 
-    fline= "## MeV, cm^-2 s^-1 MeV^-1\n"
-    f=open(outputfile,'w')
-    f.write(fline)
-
-    xmllist=glob.glob('%s/E_*_*/*_output_model*.xml' % dir)
-
-    if len(xmllist) <= 0:
-        print 'cannot find any xml files'
-        exit(1)
-
-    for xml in xmllist:
-
-        print xml
-        fitfile=xml
-        tmp=fitfile.split('/')
-        tmp[-1]='results_mod.dat'
-        fitfile='/'.join([ str(item) for item in tmp ])
-        if not os.path.exists(fitfile):
-            tmp[-1]='results.dat'
-            fitfile='/'.join([ str(item) for item in tmp ])
-
-        with open(fitfile) as fin:
-            dic=eval(fin.read())
-        E, TS, UL = GetUL(dic,srcname)
-
-        if TS < minTS:
-            f.write('%s %s 0 -1 # UL!!! TS= %s\n'%(repr(E), repr(UL), repr(TS)))
-            continue
+        print srcname
+        prefix=srcname.replace(' ','')
+        if '%s' in args.outfile:
+            outputfile=dir+'/'+(args.outfile % prefix)
         else:
-            # WriteSpecFromXML(xml,srcname,TS,f)
-            WriteSpec(dic,srcname,f)
+            outputfile=dir+'/'+args.outfile
 
-    f.close()
+        fline= "## MeV, cm^-2 s^-1 MeV^-1\n"
+        f=open(outputfile,'w')
+        f.write(fline)
+
+        reslist=glob.glob('%s/E_*_*/%s' % (dir,args.infile))
+
+        if len(reslist) <= 0:
+            print 'cannot find any result files'
+            exit(1)
+
+        for res in reslist:
+
+            print res
+
+            with open(res) as fin:
+                dic=eval(fin.read())
+            E, TS, UL = GetUL(dic,srcname)
+
+            if TS < args.minTS:
+                f.write('%s %s 0 -1 # UL!!! TS= %s\n'%(repr(E), repr(UL), repr(TS)))
+                continue
+            else:
+                # WriteSpecFromXML(xml,srcname,TS,f)
+                WriteSpec(dic,srcname,f)
+
+        f.close()
 
