@@ -18,7 +18,8 @@ echo
 SECONDS=0
 echo PATH=$PATH; echo
 
-: ${skip:=0} ${skipres:=0} ${skipgtlike:=0} ${skipgttsmap:=0}
+: ${skip:=0} ${skipres:=0} ${skipmkmodel:=0}
+: ${skipgtsrcmaps:=0} ${skipgtlike:=0} ${skipgttsmap:=0}
 : ${docut:=0} ${cutonly:=0} # default value(=0) is set if no value is specified
 
 : ${srcname:?} ${method:?} ${npix1:?} ${npix2:?}
@@ -245,7 +246,7 @@ else echo gtexpcube2 was skipped; fi
 
 sleep 3; echo; echo
 
-if [ $skip -lt 6 ] && [ -z "$skipmkmodel" ]; then
+if [ $skip -lt 6 ] && [ $skipmkmodel -eq 0 ]; then
     evfile=${evfile} srcmdl=${srcmdlin} bash ${mkmdl:=makemodel.sh} \
 	|| error makemodel
     echo "makemodel done. elapsed time: $SECONDS s"
@@ -253,7 +254,7 @@ else echo makemodel was skipped; fi
 
 sleep 3; echo; echo
 
-if [ $skip -lt 7 ]; then
+if [ $skip -lt 7 ] && [ $skipgtsrcmaps -eq 0 ]; then
     if [ $ptsrc == "no" ]; then
 	gtsrcmaps ptsrc=${ptsrc} emapbnds=no irfs=CALDB scfile=${scfile} \
 	    expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
