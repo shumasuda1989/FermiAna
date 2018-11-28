@@ -1,10 +1,15 @@
+import matplotlib
 from matplotlib import pyplot
 import numpy as np
 from numpy import array
 
 from SpectralModel import SpectralModelXML, SpectralModel, SpectralModelSEDdict
 
-def DrawSED_XML(src,ax,E,xml,dat,fdatapoint,col='b',Fermienv=True,SED=True):
+ver=matplotlib.__version__.split('.')
+ver=float('.'.join(ver[:2]))
+lims={'uplims':True} if ver>=1.4 else {'lolims':True}
+
+def DrawSED_XML(src,ax,E,xml,dat,fdatapoint,col='b',SED=True):
 
     Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
 
@@ -26,7 +31,6 @@ def DrawSED_XML(src,ax,E,xml,dat,fdatapoint,col='b',Fermienv=True,SED=True):
         pf[1]*=pf[0]*pf[0]
         pf[3]*=pf[0]*pf[0]
 
-    lims={'lolims':True,} if Fermienv else {'uplims':True,}
     ax.errorbar(pf[0][nul],pf[1][nul],yerr=pf[3][nul], fmt='o',linestyle='None',capsize=4,color=col)
     ax.errorbar(pf[0][ul],pf[1][ul],yerr=pf[1][ul]*0.3, fmt='',linestyle='None',elinewidth=0.75,capsize=4,color=col,**lims)
 
@@ -57,7 +61,7 @@ def Butterfly(ax,E,dat,src,col='b',xfac=1.,yfac=1.,SED=True):
                     facecolor=col,alpha=0.2)
     ax.plot(Ep*xfac,F*yfac,color=col)
 
-def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,Fermienv=True,SED=True):
+def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,SED=True):
     pf=np.loadtxt(fdatapoint).T
     ul =np.where(pf[3]==-1)
     nul=np.where(pf[3]!=-1)
@@ -66,7 +70,6 @@ def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,Fermienv=True,SED=True):
         pf[1]*=pf[0]**2
         pf[3]*=pf[0]**2
 
-    lims={'lolims':True,} if Fermienv else {'uplims':True,}
     ax.errorbar(pf[0][nul]*xfac,pf[1][nul]*yfac,yerr=pf[3][nul]*yfac, 
                 fmt='o',linestyle='None',capsize=4,color=col)
     ax.errorbar(pf[0][ul]*xfac,pf[1][ul]*yfac,yerr=pf[1][ul]*0.3*yfac, 
@@ -74,7 +77,7 @@ def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,Fermienv=True,SED=True):
                 capsize=4,color=col,**lims)
 
 
-def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,Fermienv=True,SED=True):
+def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,SED=True):
     with open(dat) as f:
         dic=eval(f.read())
     E   = np.array(dic['Energy']['Value'])
@@ -91,7 +94,6 @@ def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,Fermienv=True,SE
         ErrF*=E**2
         UL  *=E**2
 
-    lims={'lolims':True,} if Fermienv else {'uplims':True,}
     ax.errorbar(E[nul]*xfac,F[nul]*yfac,yerr=ErrF[nul]*yfac, 
                 fmt='o',linestyle='None',capsize=4,color=col)
     # ax.plot(E[nul]*xfac,F[nul]*yfac,'o',linestyle='None',color=col)
@@ -99,16 +101,16 @@ def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,Fermienv=True,SE
                 fmt='',linestyle='None',elinewidth=0.75,
                 capsize=4,color=col,**lims)
 
-def DrawSED(ax,E,resdat=None,src=None,seddat=None,fdatapoint=None,col='b',xfac=1.,yfac=1.,Fermienv=True,SED=True):
+def DrawSED(ax,E,resdat=None,src=None,seddat=None,fdatapoint=None,col='b',xfac=1.,yfac=1.,SED=True):
     if   seddat is not None  and  resdat is src is fdatapoint is None:
         Spectrum(ax,E,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,Fermienv=Fermienv,SED=SED)
+        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
     elif not None in (resdat,src,seddat)  and  fdatapoint is None:
         Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,Fermienv=Fermienv,SED=SED)
+        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
     elif not None in (resdat,src,fdatapoint)  and  seddat is None:
         Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraph(ax,fdatapoint,col=col,xfac=xfac,yfac=yfac,Fermienv=Fermienv,SED=SED)
+        SEDGraph(ax,fdatapoint,col=col,xfac=xfac,yfac=yfac,SED=SED)
     else:
         print 'DrawSED error: arguments are invalid.'
 
