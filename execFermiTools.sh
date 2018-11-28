@@ -18,6 +18,15 @@ echo
 SECONDS=0
 echo PATH=$PATH; echo
 
+if [ $# -eq 1 ]; then  # You can load params from an external file.
+    if [ -f $1 ]; then
+	set -a; . $1; set +a
+    else
+	echo cannot find $1 >&2
+	exit 1
+    fi
+fi
+
 : ${skip:=0} ${skipres:=0} ${skipmkmodel:=0}
 : ${skipgtsrcmaps:=0} ${skipgtlike:=0} ${skipgttsmap:=0}
 : ${docut:=0} ${cutonly:=0} # default value(=0) is set if no value is specified
