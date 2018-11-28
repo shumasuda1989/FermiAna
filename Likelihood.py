@@ -4,6 +4,7 @@ import os
 import time
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
+from LikelihoodState import LikelihoodState
 from UpperLimits import UpperLimits
 from IntegralUpperLimit import calc_int
 from collections import OrderedDict
@@ -97,7 +98,7 @@ def PrintResult(dic):
         else:
             print k+':'
             for kk, vv in v.items():
-                if kk in ['Spectrum','Diff Flux'] \
+                if kk in ['Spectrum','EnFlux','Diff Flux'] \
                    or kk.startswith('scale ')  or 'UL' in kk:
                     continue
                 elif kk=='Flux':
@@ -174,6 +175,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 src[param]=func[param]
 
         flux=like1.flux(sname,emin=emin,emax=emax)
+        enflux=like1.energyFlux(sname,emin=emin,emax=emax)
         if flag:
             if sname.find('gll')<0 and sname.find('iso')<0:
                 for param in func.paramNames:
@@ -181,9 +183,12 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 src['Spectrum']=func.genericName()
                 src['TS value']=like1.Ts(sname)
             eflx=like1.fluxError(sname,emin=emin,emax=emax)
+            eenflx=like1.energyFluxError(sname,emin=emin,emax=emax)
             src['Flux']=(flux,eflx)
+            src['EnFlux']=(enflux,eenflx)
         else:
             src['Flux']=flux
+            src['EnFlux']=enflux
 
         if like1.model[sname].getType() == 'Diffuse':
             tmplist=[]
@@ -215,8 +220,8 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
             print sname
             flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
             try_ul_calc=1
+            par=like1.normPar(sname)
             while flux_ul==-1 and try_ul_calc<=10:
-                par=like1.normPar(sname)
                 par.setBounds(par.getBounds()[0],par.getBounds()[1]*10)
                 like1.syncSrcParams(sname)
                 flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
@@ -226,10 +231,13 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
             else:
                 print '%lg ph/cm^2/s for emin=%.1f, emax=%.1f (Bayesian UL)'%(flux_ul,ulresults['flux_emin'],ulresults['flux_emax'])
                 ul[sname]=ulresults
-                dic[sname]['dNdE UL']=ulresults['ul_value']
-                dic[sname]['dNdE UL']*=like1.normPar(sname).getScale()
+                dic[sname]['dNdE UL']=ulresults['ul_value']*par.getScale()
                 ## dN/dE UL at a reference enrergy (ph/cm^2/s)
                 dic[sname]['Flux UL']=flux_ul
+                saved_state = LikelihoodState(like1)
+                par.setValue(ulresults['ul_value'])
+                dic[sname]['EnFlux UL']=like1.energyFlux(sname,emin,emax)
+                saved_state.restore()
                 dic[sname]['UL algo']='bayesian'
                 WriteResult(dic,results)
 
@@ -244,6 +252,10 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
                 print ul[sname].results[-1]
                 dic[sname]['dNdE UL']=pref_ul*like1.normPar(sname).getScale()
                 dic[sname]['Flux UL']=flux_ul
+                saved_state = LikelihoodState(like1)
+                like1.normPar(sname).setValue(pref_ul)
+                dic[sname]['EnFlux UL']=like1.energyFlux(sname,emin,emax)
+                saved_state.restore()
                 dic[sname]['UL algo']='frequentist'
                 dic[sname]['UL dlogL']=ul[sname].results[-1].delta
                 WriteResult(dic,results)
@@ -405,7 +417,7 @@ emax=E[-1]
 sname='
 
 ul = UpperLimits(like1)
-ul[sname].compute(emin=emin,emax=emax)
+flux_ul,pref_ul=ul[sname].compute(emin=emin,emax=emax)
 ul[sname].results[-1]
 
 flux_ul,ulresults = calc_int(like1, sname, emin=emin, emax=emax)
