@@ -2,7 +2,7 @@
 
 if [ -z "$FERMI_DIR" ]; then
     echo Error: FERMI_DIR is not set >&2 ; exit 1
-else
+elif [ -z "$FERMI_OLD_PATH" ]; then
     source $FERMI_DIR/fermi-init.sh || exit 1
     export PYTHONNOUSERSITE=yes
 fi
@@ -56,7 +56,7 @@ if [ -z "$inv_pixsize" ]; then
     echo pixel size 1/inv_pixsize is set to 0.2 deg/pix 
     inv_pixsize=5 # =1/0.2
 fi
-: ${proj:=AIT} ${ptsrc:=yes} ${coordsys:=CEL}
+: ${proj:=AIT} ${ptsrc:=yes} ${coordsys:=CEL} ${irfs:=P8R2_SOURCE_V6}
 : ${USE_BL_EDISP:=true} ${refit:=no} ${plot:=no} ${optimizer:=NEWMINUIT}
 : ${optimizerTS:=${optimizer}}
 
@@ -125,7 +125,7 @@ if [ -z "$enumbins" ]; then
     enumbins=$(echo "(l($emax)-l($emin))*10/l(10)+0.5" | bc -l)
     enumbins=$(echo "$enumbins/1" | bc)
 fi
-echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys optimizer=$optimizer slist="'$slist'"
+echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys irfs=$irfs optimizer=$optimizer slist="'$slist'"
 echo
 
 if [ "$nosrc" == "yes" ] || [ "$nosrc" == "1" ]; then
@@ -163,7 +163,7 @@ echo evfile=$evfile scfile=$scfile cmap=$cmap ccube=$ccube lvtime=$lvtime expmap
 echo
 
 
-export method METHOD Ra Dec srcrad binsz binszts emin emax enumbins inv_pixsize proj ptsrc coordsys optimizer refit plot slist
+export method METHOD Ra Dec srcrad binsz binszts emin emax enumbins inv_pixsize proj ptsrc coordsys irfs optimizer refit plot slist
 export evfile scfile bexpcube lvtime srcmdlin srcmdlout srcmap cmap ccube tsmap fitso
 
 if [ -n "$export" ]; then
@@ -217,7 +217,7 @@ sleep 3; echo; echo
 
 if [ $skip -lt 2 ] && [ $METHOD = "UNBINNED" ]; then
     gtexpmap evfile=${evfile} scfile=${scfile} expcube=${lvtime} \
-	outfile=${expmap} irfs=P8R2_SOURCE_V6 srcrad=${srcrad} \
+	outfile=${expmap} irfs=${irfs} srcrad=${srcrad} \
 	nlong=$((srcrad*inv_pixsize)) nlat=$((srcrad*inv_pixsize)) \
 	nenergies=${enumbins} || error gtexpmap
     echo "gtexpmap done. elapsed time: $SECONDS s"
@@ -246,7 +246,7 @@ sleep 3; echo; echo
 
 if [ $skip -lt 5 ]; then
     gtexpcube2 infile=${lvtime} cmap=none outfile=${bexpcube} \
-	irfs=P8R2_SOURCE_V6 nxpix=${npix2} nypix=${npix2} binsz=${binsz} \
+	irfs=${irfs} nxpix=${npix2} nypix=${npix2} binsz=${binsz} \
 	coordsys=${coordsys} xref=${Ra} yref=${Dec} \
 	axisrot=0 proj=${proj} ebinalg=LOG \
 	emin=${emin} emax=${emax} enumbins=${enumbins} || error gtexpcube2
