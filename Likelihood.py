@@ -11,13 +11,12 @@ from collections import OrderedDict
 from SED import SED 
 
 like = []
-likeobj = []
 ullist = []
 
-def OptimizeModel(like1,like1obj,out=None,slist=[],TSmax=4.):
+def OptimizeModel(like1,out=None,slist=[],TSmax=4.):
 
     print 'All sources with TS < %g will be deleted.'%TSmax
-    like1.optimize(optObject=like1obj)
+    like1.optimize(optObject=like1.optObject)
     for source in like1.sourceNames():
         TS=like1.Ts(source)
         if TS < TSmax and source not in slist:
@@ -27,37 +26,40 @@ def OptimizeModel(like1,like1obj,out=None,slist=[],TSmax=4.):
     if out is not None:
         like1.logLike.writeXml(out)
 
-def GetLikeObjs(obs,modelin,optimizer,like1=None,obj=None,tol=1e-3):
 
-    if like1 is None:
-        like1 = BinnedAnalysis(obs,modelin,optimizer=optimizer)
+def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
+
+    like1 = BinnedAnalysis(obs,modelin,optimizer=optimizer)
     like1.tol = tol
     print 'tolerance = ',like1.tol
 
-    if obj is not None:
-        like1obj = obj
-    elif optimizer=='NEWMINUIT':
+    if   optimizer=='NEWMINUIT':
         like1obj = pyLike.NewMinuit(like1.logLike)
     elif optimizer=='MINUIT':
         like1obj = pyLike.Minuit(like1.logLike)
     else:
-        like1obj = pyLike.Optimizer(like1.logLike)
+        optFactory = pyLike.OptimizerFactory_instance()
+        like1obj = optFactory.create(optimizer, like1.logLike)
+
+    like1.optObject=like1obj
 
     if like1 not in like:
         like.append(like1)
-    if like1obj not in likeobj:
-        likeobj.append(like1obj)
 
-    return like1,like1obj
+    return like1
 
-def Fit(obs,modelin,optimizer,out=None,like1=None,obj=None,tol=1e-3):
 
-    like1,like1obj=GetLikeObjs(obs,modelin,optimizer,like1,obj,tol)
+def Fit(obs,modelin,optimizer,out=None,like1=None,tol=1e-3):
 
-    logL=like1.fit(verbosity=3,covar=True,optObject=like1obj)
+    if like1 is None or not isinstance(like1,BinnedAnalysis):
+        like1=GetLikeObj(obs,modelin,optimizer,tol)
+
+    logL=like1.fit(verbosity=3,covar=True,optObject=like1.optObject)
 
     if out is not None:
         like1.logLike.writeXml(out)
+
+    like1obj=like1.optObject
 
     if optimizer=='MINUIT':
         print 'Quality=', like1obj.getQuality()
@@ -157,17 +159,17 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     fitxml_pre=modelin
     fitxml=modelout+'_fit%d'%(nloop+1)
 
-    like1,like1obj=None,None
+    like1=None
     if optmodel[0]:
-        like1,like1obj=GetLikeObjs(obs,fitxml_pre,optimizer,tol=tol)
-        OptimizeModel(like1,like1obj,slist=slist,TSmax=optmodel[1])
+        like1=GetLikeObj(obs,fitxml_pre,optimizer,tol=tol)
+        OptimizeModel(like1,slist=slist,TSmax=optmodel[1])
 
     while nloop < 3 and \
-          not Fit(obs,fitxml_pre,optimizer,fitxml,like1,like1obj,tol):
+          not Fit(obs,fitxml_pre,optimizer,fitxml,like1,tol):
         nloop+=1
         fitxml_pre=fitxml
         fitxml=modelout+'_fit%d'%(nloop+1)
-        like1,like1obj=None,None
+        like1=None
 
     if nloop == 3:
         print 'could not converge'
@@ -179,7 +181,6 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     #     pickle.dump(likeobj, f)
 
     like1=like[-1]
-    like1obj=likeobj[-1]
     E=like1.energies
     emin=E[0]
     emax=E[-1]
@@ -443,10 +444,9 @@ srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,resul
 obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
 #optimizer='MINUIT'
-Fit(obs,modelin,optimizer,out=,like1=like1,obj=like1obj,tol=)
+Fit(obs,modelin,optimizer,out=,like1=like1,tol=)
 
 like1=like[-1]
-like1obj=likeobj[-1]
 E=like1.energies
 emin=E[0]
 emax=E[-1]
