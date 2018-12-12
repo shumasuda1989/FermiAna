@@ -13,6 +13,7 @@ from SED import SED
 like = []
 ullist = []
 
+
 def OptimizeModel(like1,out=None,slist=[],TSmax=4.):
 
     print 'All sources with TS < %g will be deleted.'%TSmax
@@ -141,7 +142,7 @@ def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasen
         if  fbasename is None:
             fbasename='sed_%s_%c'%(sname.replace(' ',''),ul_alg[0])
         sed.save(fbasename+'.dat')
-        if os.environ.get('DISPLAY','')!='':
+        if os.environ.get('DISPLAY') is not None:
             sed.plot(fbasename+'.png')
         return sed.todict()
 
@@ -151,9 +152,11 @@ def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasen
 
 
 
-def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,tol=1e-3):
+def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,tol=1e-3):
 
-    obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
+    if statistic != 'BINNED':
+        print '%s method is not implemented in this script'%statistic
+        return None
 
     nloop=0
     fitxml_pre=modelin
@@ -339,7 +342,7 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
       Plot count graph.
 
     '''
-    if plot=='yes':
+    if plot:
         try:
             print ''
             like1.setPlotter('mpl')
@@ -364,6 +367,18 @@ def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic
     # like2.fluxError(sname,emin=emin,emax=emax)
 
 
+def mybool(Input,default=False):
+    env=os.environ
+    if env.get(Input) is None:
+        return default
+    elif env[Input].lower() in ['t','true','y','yes','1']:
+        return True
+    elif env[Input].lower() in ['f','false','n','no','0']:
+        return False
+    else:
+        print 'Invalid value in %s (= "%s")'% (Input,env[Input])
+        exit(1)
+
 def GetEnv():
 
     env=os.environ
@@ -378,8 +393,8 @@ def GetEnv():
     specfile=env.get('specfile','counts_spectra.fits')
     results=env.get('results','results.dat')
     # USE_BL_EDISP=env['USE_BL_EDISP']
-    refit=env.get('refit')
-    plot=env.get('plot')
+    refit=mybool('refit')
+    plot=mybool('plot')
 
     snamelist=env.get('slist','')
     if snamelist=='':
@@ -399,35 +414,37 @@ if __name__ == '__main__':
     srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 
     env=os.environ
-    if env.get('TS_Max','')!='':
-        TSmax=float(env['TS_Max'])
-    else:
-        TSmax=4.
-    optmdl=(True,TSmax) if env.get('OPT_MODEL','')!='' else (False,)
-    skipul=True if env.get('SKIP_UL','')!='' else False
-    bayes=True if env.get('BAYES','')!='' else False
+
+    TSmax=float(env.get('TS_Max','4'))
+    optmdl=(True,TSmax) if mybool('OPT_MODEL') else (False,)
+    skipul=mybool('SKIP_UL')
+    bayes=mybool('BAYES')
     be=env.get('E_bin')
     if be is not None:
         import numpy as np
         be=np.fromstring(be.replace(',',' '),sep=' ')
         print 'E_bin:',be
-    if env.get('Tolerance','')!='':
-        tol=float(env['Tolerance'])
-    else:
-        tol=1e-3
+    tol=float(env.get('Tolerance','1e-3'))
 
     start=time.time()
-    if refit == 'yes':
+
+    if statistic != 'BINNED':
+        print '%s method is not implemented in this script'%statistic
+        exit(1)
+    obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
+    if refit:
         optim_refit=env.get('optimizer_prerefit',optimizer)
-        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol)
+        Likelihood(obs,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol)
         print '\nRefit\n'
         modelin=modelout+'_refit'
         optmdl=(False,)
-    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,tol)
+
+    Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,tol)
+
     etime=time.time()-start
     print 'Elapsed CPU time:',etime,'sec'
 
-    if plot=='yes':
+    if plot:
         try:
             import code
             code.InteractiveConsole(globals()).interact()
