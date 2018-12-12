@@ -14,13 +14,26 @@ like = []
 likeobj = []
 ullist = []
 
-def Fit(likelist,likeobjlist,obs,modelin,optimizer,out=None,like1=None,obj=None,tol=1e-3):
+def OptimizeModel(like1,like1obj,out=None,slist=[],TSmax=4.):
+
+    print 'All sources with TS < %g will be deleted.'%TSmax
+    like1.optimize(optObject=like1obj)
+    for source in like1.sourceNames():
+        TS=like1.Ts(source)
+        if TS < TSmax and source not in slist:
+            print "Deleting",source,'(TS = %g)'%TS
+            like1.deleteSource(source)
+    print
+    if out is not None:
+        like1.logLike.writeXml(out)
+
+def GetLikeObjs(obs,modelin,optimizer,like1=None,obj=None,tol=1e-3):
 
     if like1 is None:
         like1 = BinnedAnalysis(obs,modelin,optimizer=optimizer)
-
     like1.tol = tol
     print 'tolerance = ',like1.tol
+
     if obj is not None:
         like1obj = obj
     elif optimizer=='NEWMINUIT':
@@ -30,12 +43,18 @@ def Fit(likelist,likeobjlist,obs,modelin,optimizer,out=None,like1=None,obj=None,
     else:
         like1obj = pyLike.Optimizer(like1.logLike)
 
-    logL=like1.fit(verbosity=3,covar=True,optObject=like1obj)
+    if like1 not in like:
+        like.append(like1)
+    if like1obj not in likeobj:
+        likeobj.append(like1obj)
 
-    if len(likelist)==0 or  not like1 in likelist:
-        likelist.append(like1)
-    if len(likeobjlist)==0 or  not like1obj in likeobjlist:
-        likeobjlist.append(like1obj)
+    return like1,like1obj
+
+def Fit(obs,modelin,optimizer,out=None,like1=None,obj=None,tol=1e-3):
+
+    like1,like1obj=GetLikeObjs(obs,modelin,optimizer,like1,obj,tol)
+
+    logL=like1.fit(verbosity=3,covar=True,optObject=like1obj)
 
     if out is not None:
         like1.logLike.writeXml(out)
@@ -130,17 +149,25 @@ def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasen
 
 
 
-def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,SkipUL=False,Bayes=False,binedge=None):
+def Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,tol=1e-3):
 
     obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
     nloop=0
     fitxml_pre=modelin
     fitxml=modelout+'_fit%d'%(nloop+1)
-    while nloop < 3 and not Fit(like,likeobj,obs,fitxml_pre,optimizer,fitxml):
+
+    like1,like1obj=None,None
+    if optmodel[0]:
+        like1,like1obj=GetLikeObjs(obs,fitxml_pre,optimizer,tol=tol)
+        OptimizeModel(like1,like1obj,slist=slist,TSmax=optmodel[1])
+
+    while nloop < 3 and \
+          not Fit(obs,fitxml_pre,optimizer,fitxml,like1,like1obj,tol):
         nloop+=1
         fitxml_pre=fitxml
         fitxml=modelout+'_fit%d'%(nloop+1)
+        like1,like1obj=None,None
 
     if nloop == 3:
         print 'could not converge'
@@ -371,6 +398,11 @@ if __name__ == '__main__':
     srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 
     env=os.environ
+    if env.get('TS_Max','')!='':
+        TSmax=float(env['TS_Max'])
+    else:
+        TSmax=4.
+    optmdl=(True,TSmax) if env.get('OPT_MODEL','')!='' else (False,)
     skipul=True if env.get('SKIP_UL','')!='' else False
     bayes=True if env.get('BAYES','')!='' else False
     be=env.get('E_bin')
@@ -378,14 +410,19 @@ if __name__ == '__main__':
         import numpy as np
         be=np.fromstring(be.replace(',',' '),sep=' ')
         print 'E_bin:',be
+    if env.get('Tolerance','')!='':
+        tol=float(env['Tolerance'])
+    else:
+        tol=1e-3
 
     start=time.time()
     if refit == 'yes':
         optim_refit=env.get('optimizer_prerefit',optimizer)
-        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,True,bayes,None)
+        Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol)
         print '\nRefit\n'
         modelin=modelout+'_refit'
-    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,skipul,bayes,be)
+        optmdl=(False,)
+    Likelihood(srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,tol)
     etime=time.time()-start
     print 'Elapsed CPU time:',etime,'sec'
 
@@ -406,7 +443,7 @@ srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,resul
 obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
 
 #optimizer='MINUIT'
-Fit(like,likeobj,obs,modelin,optimizer,out=,like1=like1,obj=like1obj)
+Fit(obs,modelin,optimizer,out=,like1=like1,obj=like1obj,tol=)
 
 like1=like[-1]
 like1obj=likeobj[-1]
