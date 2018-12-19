@@ -2,8 +2,10 @@
 
 import os
 import time
+import gc
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
+from SummedLikelihood import SummedLikelihood
 from LikelihoodState import LikelihoodState
 from UpperLimits import UpperLimits
 from IntegralUpperLimit import calc_int
@@ -30,7 +32,18 @@ def OptimizeModel(like1,out=None,slist=[],TSmax=4.):
 
 def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
 
-    like1 = BinnedAnalysis(obs,modelin,optimizer=optimizer)
+    if isinstance(obs,list) or isinstance(obs,tuple):
+        like1 = SummedLikelihood(optimizer=optimizer)
+        for il,obs1 in enumerate(obs):
+            print 'Creating a Likelihood object for obs%d...'%il
+            like2 = BinnedAnalysis(obs1,modelin,optimizer=optimizer)
+            like1.addComponent(like2)
+    elif isinstance(obs,BinnedObs):
+        like1 = BinnedAnalysis(obs,modelin,optimizer=optimizer)
+    else:
+        print 'error: invalid ObsObject'
+        exit(1)
+
     like1.tol = tol
     print 'tolerance = ',like1.tol
 
@@ -52,13 +65,14 @@ def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
 
 def Fit(obs,modelin,optimizer,out=None,like1=None,tol=1e-3):
 
-    if like1 is None or not isinstance(like1,BinnedAnalysis):
+    if like1 is None:
         like1=GetLikeObj(obs,modelin,optimizer,tol)
 
     logL=like1.fit(verbosity=3,covar=True,optObject=like1.optObject)
 
     if out is not None:
-        like1.logLike.writeXml(out)
+        # like1.logLike.writeXml(out)
+        like1.writeXml(out)
 
     like1obj=like1.optObject
 
@@ -169,9 +183,12 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
 
     while nloop < 3 and \
           not Fit(obs,fitxml_pre,optimizer,fitxml,like1,tol):
+        print; print
         nloop+=1
         fitxml_pre=fitxml
         fitxml=modelout+'_fit%d'%(nloop+1)
+        del like[-1]
+        gc.collect()
         like1=None
 
     if nloop == 3:
@@ -184,7 +201,18 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
     #     pickle.dump(likeobj, f)
 
     like1=like[-1]
-    E=like1.energies
+    if isinstance(like1,SummedLikelihood):
+        is_esame=True
+        for l in like1.components[1:]:
+            is_esame=(is_esame and 
+                      np.allclose(like1.components[0].energies, l.energies) )
+        if is_esame:
+            E=like1.components[0].energies
+        else:
+            E=(min([l.energies[0]  for l in like1.components]),
+               max([l.energies[-1] for l in like1.components]))
+    else:
+        E=like1.energies
     emin=E[0]
     emax=E[-1]
 
@@ -302,8 +330,8 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
 
     try:
         if specfile!='None' and specfile!='' and specfile is not None:
-            like1.writeCountsSpectra(outfile=specfile,nee=len(E)-1)
-    except RuntimeError as e:
+            like1.writeCountsSpectra(specfile,len(E)-1)
+    except (RuntimeError,NotImplementedError) as e:
         print e
         pass
 
@@ -386,6 +414,7 @@ def GetEnv():
     srcMaps=env['srcmap']
     expCube=env['lvtime']
     binnedExpMap=env['bexpcube']
+    IRFs=env.get('irfs','CALDB')
     modelin  =env['srcmdlin']
     modelout =env['srcmdlout']
     optimizer=env['optimizer']
@@ -402,7 +431,7 @@ def GetEnv():
     else:
         slist=snamelist.split(',')
 
-    return srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist
+    return srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist
 
 
 
@@ -411,7 +440,7 @@ def GetEnv():
 
 if __name__ == '__main__':
 
-    srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
+    srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
 
     env=os.environ
 
@@ -431,13 +460,33 @@ if __name__ == '__main__':
     if statistic != 'BINNED':
         print '%s method is not implemented in this script'%statistic
         exit(1)
-    obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
+
+    lobssum=env.get('SUM_LIST') 
+    # srcmap1, ltcube1, expcube1 | srcmap2, ltcube2, expcube2 | ...
+    if lobssum is not None:
+        obs=[]
+        lobs=lobssum.split('|')
+        for l0 in lobs:
+            l=[ s.strip() for s in l0.split(',') ]
+            print l
+            obs.append(BinnedObs(srcMaps=l[0],expCube=l[1],
+                                 binnedExpMap=l[2],irfs='CALDB'))
+            print "IRFs:", obs[-1].irfs
+    else:
+        obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,
+                        binnedExpMap=binnedExpMap,irfs=IRFs)
+
     if refit:
         optim_refit=env.get('optimizer_prerefit',optimizer)
-        Likelihood(obs,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol)
+        tol_refit=env.get('Tolerance_prerefit',tol)
+
+        Likelihood(obs,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol_refit)
+
         print '\nRefit\n'
         modelin=modelout+'_refit'
         optmdl=(False,)
+        del like[-1]
+        gc.collect()
 
     Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,tol)
 
@@ -457,8 +506,8 @@ if __name__ == '__main__':
 import sys
 sys.path.append('..')
 from Likelihood import *
-srcMaps,expCube,binnedExpMap,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
-obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs='CALDB')
+srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
+obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs=IRFs)
 
 #optimizer='MINUIT'
 Fit(obs,modelin,optimizer,out=,like1=like1,tol=)
