@@ -56,6 +56,7 @@ if [ -z "$inv_pixsize" ]; then
     echo pixel size 1/inv_pixsize is set to 0.2 deg/pix 
     inv_pixsize=5 # =1/0.2
 fi
+: ${evclass:=128} ${evtype:=3} ${zmax:=90}
 : ${proj:=AIT} ${ptsrc:=yes} ${coordsys:=CEL} ${irfs:=P8R2_SOURCE_V6}
 : ${USE_BL_EDISP:=true} ${refit:=no} ${plot:=no} ${optimizer:=NEWMINUIT}
 : ${optimizerTS:=${optimizer}}
@@ -125,7 +126,7 @@ if [ -z "$enumbins" ]; then
     enumbins=$(echo "(l($emax)-l($emin))*10/l(10)+0.5" | bc -l)
     enumbins=$(echo "$enumbins/1" | bc)
 fi
-echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys irfs=$irfs optimizer=$optimizer slist="'$slist'"
+echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec evclass=$evclass evtype=$evtype srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins zmax=$zmax inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys irfs=$irfs optimizer=$optimizer slist="'$slist'"
 echo
 
 if [ "$nosrc" == "yes" ] || [ "$nosrc" == "1" ]; then
@@ -146,7 +147,7 @@ if [ -z "$scfile" ]; then echo scfile not found; exit 1; fi
 : ${bexpcube:=${prefix}_expcube.fits}
 : ${srcmdlin:=${srcname2}_input_model.xml}
 : ${srcmdlout:=${srcname2}_output_model_${emin}-${emax}.xml}
-: ${srcmap:=${prefix2}_srcmaps.fits}
+: ${srcmap:=${prefix}_srcmaps.fits}
 if [ "$chngnm" == "yes" ] || [ "$chngnm" == "1" ]; then
     opres="results=${results:=${prefix2}_results.dat}"
     opplo="specfile=${specfile:=${prefix2}_counts_spectra.fits}"
@@ -163,7 +164,7 @@ echo evfile=$evfile scfile=$scfile cmap=$cmap ccube=$ccube lvtime=$lvtime expmap
 echo
 
 
-export method METHOD Ra Dec srcrad binsz binszts emin emax enumbins inv_pixsize proj ptsrc coordsys irfs optimizer refit plot slist
+export method METHOD Ra Dec evclass evtype srcrad binsz binszts emin emax enumbins zmax inv_pixsize proj ptsrc coordsys irfs optimizer refit plot slist
 export evfile scfile bexpcube lvtime srcmdlin srcmdlout srcmap cmap ccube tsmap fitso
 
 if [ -n "$export" ]; then
@@ -184,11 +185,11 @@ if [ $docut -ne 0 ] || [ $cutonly -ne 0 ] ; then
 	filetobecut="@list.txt"
 	if [ ! -e "list.txt" ]; then ls L*_PH*.fits >list.txt; fi
     fi
-    : ${rad:=INDEF} ${evclass:=128} ${evtype:=3} ${tmin:=INDEF} ${tmax:=INDEF}
-    echo rad=$rad evclass=${evclass} evtype=${evtype} tmin=${tmin} tmax=${tmax}
+    : ${rad:=INDEF} ${tmin:=INDEF} ${tmax:=INDEF}
+    echo rad=$rad tmin=${tmin} tmax=${tmax}
     gtselect infile=${filetobecut} outfile=${prefix}_filtered.fits \
 	ra=INDEF dec=INDEF rad=${rad} evclass=${evclass} evtype=${evtype} \
-	tmin=${tmin} tmax=${tmax} emin=${emin} emax=${emax} zmax=90 \
+	tmin=${tmin} tmax=${tmax} emin=${emin} emax=${emax} zmax=${zmax} \
 	|| error gtselect
     echo "gtselect done. elapsed time: $SECONDS s"
     sleep 3; echo; echo
@@ -208,7 +209,7 @@ fi
 
 
 if [ $skip -lt 1 ]; then
-    gtltcube zmax=90 evfile=${evfile} scfile=${scfile} outfile=${lvtime} \
+    gtltcube zmax=${zmax} evfile=${evfile} scfile=${scfile} outfile=${lvtime} \
 	dcostheta=0.025 binsz=1 || error gtltcube
     echo "gtltcube done. elapsed time: $SECONDS s"
 else echo gtltcube was skipped; fi 
@@ -248,7 +249,7 @@ if [ $skip -lt 5 ]; then
     gtexpcube2 infile=${lvtime} cmap=none outfile=${bexpcube} \
 	irfs=${irfs} nxpix=${npix2} nypix=${npix2} binsz=${binsz} \
 	coordsys=${coordsys} xref=${Ra} yref=${Dec} \
-	axisrot=0 proj=${proj} ebinalg=LOG \
+	axisrot=0 proj=${proj} ebinalg=LOG evtype=${evtype} \
 	emin=${emin} emax=${emax} enumbins=${enumbins} || error gtexpcube2
     echo "gtexpcube2 done. elapsed time: $SECONDS s"
 else echo gtexpcube2 was skipped; fi 
@@ -268,17 +269,19 @@ if [ $skip -lt 7 ] && [ $skipgtsrcmaps -eq 0 ]; then
 	gtsrcmaps ptsrc=${ptsrc} emapbnds=no irfs=CALDB scfile=${scfile} \
 	    expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
 	    bexpmap=${bexpcube} outfile=${srcmap/.fits/_dif.fits} \
-	    || error gtsrcmaps
+	    evtype=${evtype} || error gtsrcmaps
 	$(dirname $0)/RemoveSource.py ${srcmdlin} diffuse tmptmp.xml
 	gtsrcmaps emapbnds=no irfs=CALDB scfile=${scfile} \
 	    expcube=${lvtime} cmap=${ccube} srcmdl=tmptmp.xml \
-	    bexpmap=${bexpcube} outfile=${srcmap} || error gtsrcmaps
+	    bexpmap=${bexpcube} outfile=${srcmap} evtype=${evtype} \
+	    || error gtsrcmaps
 	$(dirname $0)/MergeSrcmap.py ${srcmap} ${srcmap/.fits/_dif.fits}
 	rm tmptmp.xml
     else
 	gtsrcmaps emapbnds=no irfs=CALDB scfile=${scfile} \
 	    expcube=${lvtime} cmap=${ccube} srcmdl=${srcmdlin} \
-	    bexpmap=${bexpcube} outfile=${srcmap} || error gtsrcmaps
+	    bexpmap=${bexpcube} outfile=${srcmap} evtype=${evtype} \
+	    || error gtsrcmaps
     fi	
     echo "gtsrcmaps done. elapsed time: $SECONDS s"
 else echo gtsrcmaps was skipped; fi 
