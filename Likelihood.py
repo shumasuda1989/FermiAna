@@ -2,6 +2,7 @@
 
 import os
 import time
+import traceback
 import gc
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
@@ -12,7 +13,6 @@ from IntegralUpperLimit import calc_int
 from collections import OrderedDict
 from SED import SED 
 
-like = []
 ullist = []
 
 
@@ -25,10 +25,23 @@ def OptimizeModel(like1,out=None,slist=[],TSmax=4.):
         if TS < TSmax and source not in slist:
             print "Deleting",source,'(TS = %g)'%TS
             like1.deleteSource(source)
+    like1.syncSrcParams()
     print
     if out is not None:
         like1.logLike.writeXml(out)
 
+
+def GetObsList(lobssum):
+    obs=[]
+    lobs=lobssum.split('|')
+    for l0 in lobs:
+        l=[ s.strip() for s in l0.split(',') ]
+        print l
+        obs.append(BinnedObs(srcMaps=l[0],expCube=l[1],
+                             binnedExpMap=l[2],irfs='CALDB'))
+        print "IRFs:", obs[-1].irfs
+
+    return obs
 
 def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
 
@@ -44,8 +57,9 @@ def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
         print 'error: invalid ObsObject'
         exit(1)
 
-    like1.tol = tol
-    print 'tolerance = ',like1.tol
+    return like1
+
+def GetOptimizer(like1,optimizer):
 
     if   optimizer=='NEWMINUIT':
         like1obj = pyLike.NewMinuit(like1.logLike)
@@ -55,26 +69,19 @@ def GetLikeObj(obs,modelin,optimizer,tol=1e-3):
         optFactory = pyLike.OptimizerFactory_instance()
         like1obj = optFactory.create(optimizer, like1.logLike)
 
-    like1.optObject=like1obj
-
-    if like1 not in like:
-        like.append(like1)
-
-    return like1
+    return like1obj
 
 
-def Fit(obs,modelin,optimizer,out=None,like1=None,tol=1e-3):
+def Fit(like1,out=None,covar=True):
 
-    if like1 is None:
-        like1=GetLikeObj(obs,modelin,optimizer,tol)
-
-    logL=like1.fit(verbosity=3,covar=True,optObject=like1.optObject)
+    logL=like1.fit(verbosity=3,covar=covar,optObject=like1.optObject)
 
     if out is not None:
         # like1.logLike.writeXml(out)
         like1.writeXml(out)
 
     like1obj=like1.optObject
+    optimizer=like1.optimizer
 
     if optimizer=='MINUIT':
         print 'Quality=', like1obj.getQuality()
@@ -160,36 +167,41 @@ def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasen
             sed.plot(fbasename+'.png')
         return sed.todict()
 
-    except Exception as e:
-        print e
+    except Exception:
+        print(traceback.format_exc())
         pass
 
 
 
-def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,tol=1e-3):
+def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,dellist=None):
 
     if statistic != 'BINNED':
         print '%s method is not implemented in this script'%statistic
         return None
 
-    nloop=0
-    fitxml_pre=modelin
-    fitxml=modelout+'_fit%d'%(nloop+1)
-
-    like1=None
+    if dellist is not None:
+        for sdel in dellist:
+            like1.deleteSource(sdel)
+            print '%s is deleted'%sdel
+        like1.syncSrcParams()
     if optmodel[0]:
-        like1=GetLikeObj(obs,fitxml_pre,optimizer,tol=tol)
         OptimizeModel(like1,slist=slist,TSmax=optmodel[1])
 
-    while nloop < 3 and \
-          not Fit(obs,fitxml_pre,optimizer,fitxml,like1,tol):
+    like1.optObject = GetOptimizer(like1,optimizer)
+    if like1.optimizer != optimizer:
+        like1.optimizer = optimizer
+    if isinstance(like1,SummedLikelihood): # not needed, results aren't changed
+        for l in like1.components:
+            l.optimizer=optimizer
+
+    nloop=0
+    fitxml=modelout+'_fit%d'%(nloop+1)
+    while nloop < 3 and not Fit(like1,fitxml):
         print; print
         nloop+=1
-        fitxml_pre=fitxml
         fitxml=modelout+'_fit%d'%(nloop+1)
-        del like[-1]
+        like1.optObject=GetOptimizer(like1,optimizer)
         gc.collect()
-        like1=None
 
     if nloop == 3:
         print 'could not converge'
@@ -200,7 +212,6 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
     #     pickle.dump(like, f)
     #     pickle.dump(likeobj, f)
 
-    like1=like[-1]
     if isinstance(like1,SummedLikelihood):
         is_esame=True
         for l in like1.components[1:]:
@@ -318,10 +329,8 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
                 dic[sname]['UL algo']='frequentist'
                 dic[sname]['UL dlogL']=ul[sname].results[-1].delta
                 WriteResult(dic,results)
-            except RuntimeError as e:
-                import traceback
+            except RuntimeError:
                 print(traceback.format_exc())
-                print e
                 print('could not compute upper limit')
 
 
@@ -331,10 +340,12 @@ def Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,sl
     try:
         if specfile!='None' and specfile!='' and specfile is not None:
             like1.writeCountsSpectra(specfile,len(E)-1)
-    except (RuntimeError,NotImplementedError) as e:
-        print e
+    except RuntimeError:
+        print(traceback.format_exc())
         pass
-
+    except NotImplementedError as e:
+        print 'NotImplementedError:',e
+        pass
 
     cnt=0.
     for name in like1.model.srcNames:
@@ -454,6 +465,11 @@ if __name__ == '__main__':
         be=np.fromstring(be.replace(',',' '),sep=' ')
         print 'E_bin:',be
     tol=float(env.get('Tolerance','1e-3'))
+    dellist=env.get('dellist','')
+    if dellist=='':
+        dellist=[]
+    else:
+        dellist=dellist.split(',')
 
     start=time.time()
 
@@ -464,31 +480,28 @@ if __name__ == '__main__':
     lobssum=env.get('SUM_LIST') 
     # srcmap1, ltcube1, expcube1 | srcmap2, ltcube2, expcube2 | ...
     if lobssum is not None:
-        obs=[]
-        lobs=lobssum.split('|')
-        for l0 in lobs:
-            l=[ s.strip() for s in l0.split(',') ]
-            print l
-            obs.append(BinnedObs(srcMaps=l[0],expCube=l[1],
-                                 binnedExpMap=l[2],irfs='CALDB'))
-            print "IRFs:", obs[-1].irfs
+        obs = GetObsList(lobssum)
     else:
         obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,
                         binnedExpMap=binnedExpMap,irfs=IRFs)
 
+    like1=GetLikeObj(obs,modelin,optimizer)
+
     if refit:
         optim_refit=env.get('optimizer_prerefit',optimizer)
         tol_refit=env.get('Tolerance_prerefit',tol)
+        like1.tol = tol_refit; print 'tolerance = ',like1.tol
 
-        Likelihood(obs,modelin,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,tol_refit)
+        Likelihood(like1,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,dellist)
 
         print '\nRefit\n'
         modelin=modelout+'_refit'
         optmdl=(False,)
-        del like[-1]
+        dellist=None
         gc.collect()
 
-    Likelihood(obs,modelin,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,tol)
+    like1.tol = tol; print 'tolerance = ',like1.tol
+    Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,dellist)
 
     etime=time.time()-start
     print 'Elapsed CPU time:',etime,'sec'
@@ -510,9 +523,11 @@ srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,
 obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs=IRFs)
 
 #optimizer='MINUIT'
-Fit(obs,modelin,optimizer,out=,like1=like1,tol=)
+like1=GetLikeObj(obs,modelin,optimizer)
+like1.tol=
+like1.optObject = GetOptimizer(like1,optimizer)
+Fit(like1)
 
-like1=like[-1]
 E=like1.energies
 emin=E[0]
 emax=E[-1]
