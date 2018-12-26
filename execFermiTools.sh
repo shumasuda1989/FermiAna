@@ -5,6 +5,7 @@ if [ -z "$FERMI_DIR" ]; then
 elif [ -z "$FERMI_OLD_PATH" ]; then
     source $FERMI_DIR/fermi-init.sh || exit 1
     export PYTHONNOUSERSITE=yes
+    export PYTHONUNBUFFERED=yes
 fi
 
 VERDATE=$(stat -c %Y ${BASH_SOURCE:-$0}) #epoch time
@@ -41,12 +42,13 @@ METHOD=${method^^}
 if [ $skip -lt 8 ] && [ $skipgtlike -eq 0 ] && [ -z "$slist" ]; then
     echo -e "\e[31mslist is not set. ULs will not be calculated.\e[m"
 fi
-if [ $skip -lt 9 ] && [ $skipgttsmap -eq 0 ]; then
-    : ${npix3:?}
-fi
 if [ -z "$binsz" ]; then 
     echo pixel size binsz is set to 0.2 deg/pix 
     binsz=0.2
+fi
+if [ -z "$npix3" ]; then
+    echo number of pixels for TS map '"npix3"' is set to the same as npix1
+    npix3=$npix1
 fi
 if [ -z "$binszts" ]; then 
     echo pixel size for gttsmap '"binszts"' is set to the same as binsz 
