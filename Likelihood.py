@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 import gc
+import numpy as np
 # import pickle
 from BinnedAnalysis import BinnedObs, BinnedAnalysis, pyLike
 from SummedLikelihood import SummedLikelihood
@@ -11,7 +12,13 @@ from LikelihoodState import LikelihoodState
 from UpperLimits import UpperLimits
 from IntegralUpperLimit import calc_int
 from collections import OrderedDict
-from SED import SED 
+try:
+    from SED2 import SED
+    print 'my SED module imported'
+    flagsed2=True
+except ImportError:
+    from SED import SED
+    flagsed2=False
 
 ullist = []
 
@@ -156,24 +163,33 @@ def PrintResult(dic):
                         print '%s: %6g'% (kk,vv)
             print ''
 
-def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fbasename=None):
+def GetSED(like1,sname, index=-2., be=None, min_ts=4., ul_alg='bayesian', fnheader=None):
     ### ul_choices = ['frequentist', 'bayesian']
     try:
         sed = SED(like1,sname, min_ts=min_ts, bin_edges=be, ul_algorithm=ul_alg,do_minos=False, always_upper_limit=True, powerlaw_index=index)
-        if  fbasename is None:
-            fbasename='sed_%s_%c'%(sname.replace(' ',''),ul_alg[0])
-        sed.save(fbasename+'.dat')
+
+        if  fnheader is None:
+            fname='sed_%s_%c'%(sname.replace(' ',''),ul_alg[0])
+        elif '%s' in fnheader and '%c' in fnheader:
+            fname=fnheader%(sname.replace(' ',''),ul_alg[0])
+        elif '%s' in fnheader:
+            fname=fnheader% sname.replace(' ','')
+        elif '%c' in fnheader:
+            fname=fnheader% ul_alg[0]
+        else:
+            fname=fnheader
+
+        sed.save(fname+'.dat')
         if os.environ.get('DISPLAY') is not None:
-            sed.plot(fbasename+'.png')
+            sed.plot(fname+'.png')
         return sed.todict()
 
-    except Exception:
+    except:
         print(traceback.format_exc())
-        pass
 
 
 
-def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,dellist=None):
+def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmodel=(False,),SkipUL=False,Bayes=False,binedge=None,sedN=None,dellist=None):
 
     if statistic != 'BINNED':
         print '%s method is not implemented in this script'%statistic
@@ -181,8 +197,9 @@ def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,op
 
     if dellist is not None:
         for sdel in dellist:
-            like1.deleteSource(sdel)
-            print '%s is deleted'%sdel
+            if sdel in like1.model.srcNames:
+                like1.deleteSource(sdel)
+                print '%s is deleted'%sdel
         like1.syncSrcParams()
     if optmodel[0]:
         OptimizeModel(like1,slist=slist,TSmax=optmodel[1])
@@ -340,12 +357,10 @@ def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,op
     try:
         if specfile!='None' and specfile!='' and specfile is not None:
             like1.writeCountsSpectra(specfile,len(E)-1)
-    except RuntimeError:
-        print(traceback.format_exc())
-        pass
     except NotImplementedError as e:
         print 'NotImplementedError:',e
-        pass
+    except RuntimeError:
+        print(traceback.format_exc())
 
     cnt=0.
     for name in like1.model.srcNames:
@@ -368,12 +383,35 @@ def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,op
         print '\n%s Upper Limit will be calculated' % ul_alg
         print 'calculating SED...'
         for sname in slist:
+            print sname
             func=like1.model[sname].funcs['Spectrum']
             if func.genericName()=='PowerLaw':
-                idx=func['Index']*func.params['Index'].getScale()
+                idx=func.params['Index'].getTrueValue()
+            elif flagsed2 and func.genericName()=='LogParabola':
+                print 'LogParabola'
+                idx=[]
+                ebin=np.asarray(binedge)
+                ebin=np.sqrt(ebin[:-1]*ebin[1:])
+                Alpha=func.params['alpha'].getTrueValue()
+                Beta= func.params['beta'].getTrueValue()
+                Eb=   func.params['Eb'].getTrueValue()
+                for valE in ebin:
+                    idx.append( -(Alpha+2*Beta*np.log(valE/Eb)) )
+                print 'approximate PL indices:',idx
+            elif flagsed2 and func.genericName()=='PLSuperExpCutoff':
+                print 'PLSuperExpCutoff'
+                idx=[]
+                ebin=np.asarray(binedge)
+                ebin=np.sqrt(ebin[:-1]*ebin[1:])
+                Index1=func.params['Index1'].getTrueValue()
+                Index2=func.params['Index2'].getTrueValue()
+                Cutoff=func.params['Cutoff'].getTrueValue()
+                for valE in ebin:
+                    idx.append( Index1-Index2*pow(valE/Cutoff,Index2) )
+                print 'approximate PL indices:',idx
             else:
                 idx=-2.
-            GetSED(like1,sname,index=idx,be=binedge,ul_alg=ul_alg)
+            GetSED(like1,sname,index=idx,be=binedge,ul_alg=ul_alg,fnheader=sedN)
         print 'Done!'
 
 
@@ -389,7 +427,6 @@ def Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,op
             print ''
         except:
             print 'could not plot'
-            pass
 
 
     return dic
@@ -440,7 +477,7 @@ def GetEnv():
     if snamelist=='':
         slist=[]
     else:
-        slist=snamelist.split(',')
+        slist=[ x.strip() for x in snamelist.split(',') ]
 
     return srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist
 
@@ -464,12 +501,13 @@ if __name__ == '__main__':
         import numpy as np
         be=np.fromstring(be.replace(',',' '),sep=' ')
         print 'E_bin:',be
+    sedName=env.get('SED_DAT')
     tol=float(env.get('Tolerance','1e-3'))
     dellist=env.get('dellist','')
     if dellist=='':
         dellist=[]
     else:
-        dellist=dellist.split(',')
+        dellist=[ x.strip() for x in dellist.split(',') ]
 
     start=time.time()
 
@@ -490,9 +528,9 @@ if __name__ == '__main__':
     if refit:
         optim_refit=env.get('optimizer_prerefit',optimizer)
         tol_refit=env.get('Tolerance_prerefit',tol)
-        like1.tol = tol_refit; print 'tolerance = ',like1.tol
+        like1.tol = tol_refit; print 'tolerance =',like1.tol
 
-        Likelihood(like1,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,dellist)
+        Likelihood(like1,modelout+'_refit',optim_refit,statistic,None,results,plot,slist,optmdl,True,bayes,None,None,dellist)
 
         print '\nRefit\n'
         modelin=modelout+'_refit'
@@ -500,8 +538,8 @@ if __name__ == '__main__':
         dellist=None
         gc.collect()
 
-    like1.tol = tol; print 'tolerance = ',like1.tol
-    Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,dellist)
+    like1.tol = tol; print 'tolerance =',like1.tol
+    Likelihood(like1,modelout,optimizer,statistic,specfile,results,plot,slist,optmdl,skipul,bayes,be,sedName,dellist)
 
     etime=time.time()-start
     print 'Elapsed CPU time:',etime,'sec'
@@ -519,8 +557,13 @@ if __name__ == '__main__':
 import sys
 sys.path.append('..')
 from Likelihood import *
+env=os.environ
 srcMaps,expCube,binnedExpMap,IRFs,modelin,modelout,optimizer,statistic,specfile,results,refit,plot,slist = GetEnv()
+
 obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,binnedExpMap=binnedExpMap,irfs=IRFs)
+
+lobssum=env.get('SUM_LIST')
+obs = GetObsList(lobssum)
 
 #optimizer='MINUIT'
 like1=GetLikeObj(obs,modelin,optimizer)
