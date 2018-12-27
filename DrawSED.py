@@ -5,36 +5,47 @@ from numpy import array
 
 from SpectralModel import SpectralModelXML, SpectralModel, SpectralModelSEDdict
 
-ver=matplotlib.__version__.split('.')
-ver=float('.'.join(ver[:2]))
-lims={'uplims':True} if ver>=1.4 else {'lolims':True}
+_ver=matplotlib.__version__.split('.')
+_ver=float('.'.join(_ver[:2]))
+_lims={'uplims':True} if _ver>=1.4 else {'lolims':True}
 
-def DrawSED_XML(src,ax,E,xml,dat,fdatapoint,col='b',SED=True):
+def setzorder(Art,zorder):
+    if hasattr(Art, '__iter__'):
+        for it in Art:
+            setzorder(it,zorder)
+    else:
+        if hasattr(Art,'set_zorder'):
+            Art.set_zorder(zorder)
+
+def Spectrum_XML(ax,E,xml,src,dat=None,col='b',SED=True,kwspec=None,kwerr=None):
 
     Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
 
-    f,ferr,_=SpectralModelXML(xml,src,lamb=True,butt=True,resultsdat=dat)
+    if dat is None:
+        f,_=SpectralModelXML(xml,src,lamb=True); ferr=lambda ee,ff: 0
+    else:
+        f,ferr,_=SpectralModelXML(xml,src,lamb=True,butt=True,resultsdat=dat)
     F=f(Ep)
     Ferr=ferr(Ep,F)
 
     if SED:
         F*=Ep**2
         Ferr*=Ep**2
-    ax.fill_between(Ep,F-Ferr,F+Ferr,facecolor=col,alpha=0.2)
-    ax.plot(Ep,F,color=col)
 
-    pf=np.loadtxt(fdatapoint).T
-    ul =np.where(pf[3]==-1)
-    nul=np.where(pf[3]!=-1)
+    if dat is None:
+        kwargs=dict(color=col)
+        if kwspec is not None: kwargs.update(kwspec)                      
+        return ax.plot(Ep,F,**kwargs)
+    else:
+        kwargs=dict(facecolor=col,alpha=0.2)
+        if kwerr is not None: kwargs.update(kwerr)
+        a=ax.fill_between(Ep,F-Ferr,F+Ferr,**kwargs)
+        kwargs=dict(color=col)
+        if kwspec is not None: kwargs.update(kwspec)                      
+        b=ax.plot(Ep,F,**kwargs)
+        return a,b
 
-    if SED:
-        pf[1]*=pf[0]*pf[0]
-        pf[3]*=pf[0]*pf[0]
-
-    ax.errorbar(pf[0][nul],pf[1][nul],yerr=pf[3][nul], fmt='o',linestyle='None',capsize=4,color=col)
-    ax.errorbar(pf[0][ul],pf[1][ul],yerr=pf[1][ul]*0.3, fmt='',linestyle='None',elinewidth=0.75,capsize=4,color=col,**lims)
-
-def Spectrum(ax,E,dat,src=None,col='b',xfac=1.,yfac=1.,SED=True):
+def Spectrum(ax,E,dat,src=None,col='b',xfac=1.,yfac=1.,SED=True,kwspec=None):
     Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
 
     if src is None:
@@ -44,10 +55,12 @@ def Spectrum(ax,E,dat,src=None,col='b',xfac=1.,yfac=1.,SED=True):
     F=f(Ep)
     if SED:
         F*=Ep**2
-    ax.plot(Ep*xfac,F*yfac,color=col)
+    kwargs=dict(color=col)
+    if kwspec is not None: kwargs.update(kwspec)                      
+    return ax.plot(Ep*xfac,F*yfac,**kwargs)
 
 
-def Butterfly(ax,E,dat,src,col='b',xfac=1.,yfac=1.,SED=True):
+def Butterfly(ax,E,dat,src,col='b',xfac=1.,yfac=1.,SED=True,kwspec=None,kwerr=None):
     Ep=np.logspace( np.log10(E[0]), np.log10(E[-1]), num=100 )
 
     f,ferr,_=SpectralModel(dat,src,lamb=True,butt=True)
@@ -57,11 +70,16 @@ def Butterfly(ax,E,dat,src,col='b',xfac=1.,yfac=1.,SED=True):
         F*=Ep**2
         Ferr*=Ep**2
 
-    ax.fill_between(Ep*xfac,(F-Ferr)*yfac,(F+Ferr)*yfac,
-                    facecolor=col,alpha=0.2)
-    ax.plot(Ep*xfac,F*yfac,color=col)
+    kwargs=dict(facecolor=col,alpha=0.2)
+    if kwerr is not None: kwargs.update(kwerr)
+    a=ax.fill_between(Ep*xfac,(F-Ferr)*yfac,(F+Ferr)*yfac,**kwargs)
 
-def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,SED=True):
+    kwargs=dict(color=col)
+    if kwspec is not None: kwargs.update(kwspec)                      
+    b=ax.plot(Ep*xfac,F*yfac,**kwargs)
+    return a,b
+
+def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,SED=True,kwdata=None,kwul=None):
     pf=np.loadtxt(fdatapoint).T
     ul =np.where(pf[3]==-1)
     nul=np.where(pf[3]!=-1)
@@ -70,14 +88,18 @@ def SEDGraph(ax,fdatapoint,col='b',xfac=1.,yfac=1.,SED=True):
         pf[1]*=pf[0]**2
         pf[3]*=pf[0]**2
 
-    ax.errorbar(pf[0][nul]*xfac,pf[1][nul]*yfac,yerr=pf[3][nul]*yfac, 
-                fmt='o',linestyle='None',capsize=4,color=col)
-    ax.errorbar(pf[0][ul]*xfac,pf[1][ul]*yfac,yerr=pf[1][ul]*0.3*yfac, 
-                fmt='',linestyle='None',elinewidth=0.75,
-                capsize=4,color=col,**lims)
+    kwargs=dict(fmt='o',linestyle='None',capsize=4,color=col)
+    if kwdata is not None: kwargs.update(kwdata)
+    a=ax.errorbar(pf[0][nul]*xfac,pf[1][nul]*yfac,yerr=pf[3][nul]*yfac,**kwargs)
 
+    kwargs=dict(fmt='',linestyle='None',elinewidth=0.75,capsize=4,color=col)
+    kwargs.update(_lims)
+    if kwul is not None:   kwargs.update(kwul)
+    b=ax.errorbar(pf[0][ul]*xfac,pf[1][ul]*yfac,yerr=pf[1][ul]*0.3*yfac,**kwargs)
 
-def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,SED=True):
+    return a,b
+
+def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,SED=True,kwdata=None,kwul=None):
     with open(dat) as f:
         dic=eval(f.read())
     E   = np.array(dic['Energy']['Value'])
@@ -94,23 +116,30 @@ def SEDGraphFromSEDdict(ax,dat,col='b',xfac=1.,yfac=1.,tsmin=4.,SED=True):
         ErrF*=E**2
         UL  *=E**2
 
-    ax.errorbar(E[nul]*xfac,F[nul]*yfac,yerr=ErrF[nul]*yfac, 
-                fmt='o',linestyle='None',capsize=4,color=col)
-    # ax.plot(E[nul]*xfac,F[nul]*yfac,'o',linestyle='None',color=col)
-    ax.errorbar(E[ul]*xfac,UL[ul]*yfac,yerr=UL[ul]*0.3*yfac, 
-                fmt='',linestyle='None',elinewidth=0.75,
-                capsize=4,color=col,**lims)
+    kwargs=dict(fmt='o',linestyle='None',capsize=4,color=col)
+    if kwdata is not None: kwargs.update(kwdata)
+    a=ax.errorbar(E[nul]*xfac,F[nul]*yfac,yerr=ErrF[nul]*yfac,**kwargs)
 
-def DrawSED(ax,E,resdat=None,src=None,seddat=None,fdatapoint=None,col='b',xfac=1.,yfac=1.,SED=True):
+    kwargs=dict(fmt='',linestyle='None',elinewidth=0.75,capsize=4,color=col)
+    kwargs.update(_lims)
+    if kwul is not None:   kwargs.update(kwul)
+    b=ax.errorbar(E[ul]*xfac,UL[ul]*yfac,yerr=UL[ul]*0.3*yfac,**kwargs)
+
+    return a,b
+
+def DrawSED(ax,E,resdat=None,src=None,seddat=None,fdatapoint=None,col='b',xfac=1.,yfac=1.,SED=True,kwspec=None,kwerr=None,kwdata=None,kwul=None):
     if   seddat is not None  and  resdat is src is fdatapoint is None:
-        Spectrum(ax,E,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
+        a=Spectrum(ax,E,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED,kwspec=kwspec)
+        b=SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED,kwdata=kwdata,kwul=kwul)
+        return a,b
     elif not None in (resdat,src,seddat)  and  fdatapoint is None:
-        Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED)
+        a=Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED,kwspec=kwspec,kwerr=kwerr)
+        b=SEDGraphFromSEDdict(ax,seddat,col=col,xfac=xfac,yfac=yfac,SED=SED,kwdata=kwdata,kwul=kwul)
+        return a,b
     elif not None in (resdat,src,fdatapoint)  and  seddat is None:
-        Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED)
-        SEDGraph(ax,fdatapoint,col=col,xfac=xfac,yfac=yfac,SED=SED)
+        a=Butterfly(ax,E,resdat,src,col=col,xfac=xfac,yfac=yfac,SED=SED,kwspec=kwspec,kwerr=kwerr)
+        b=SEDGraph(ax,fdatapoint,col=col,xfac=xfac,yfac=yfac,SED=SED,kwdata=kwdata,kwul=kwul)
+        return a,b
     else:
         print 'DrawSED error: arguments are invalid.'
 
