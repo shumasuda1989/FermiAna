@@ -33,12 +33,12 @@ fi
 : ${docut:=0} ${cutonly:=0} # default value(=0) is set if no value is specified
 
 : ${srcname:?} ${method:?} ${npix1:?} ${npix2:?}
+METHOD=${method^^}
 # check if values in these vars are set
 if [ -z "$srcrad" ]; then
     echo  srcrad is set to 20 deg 
     srcrad=20
 fi
-METHOD=${method^^}
 if [ $skip -lt 8 ] && [ $skipgtlike -eq 0 ] && [ -z "$slist" ]; then
     echo -e "\e[31mslist is not set. ULs will not be calculated.\e[m"
 fi
@@ -61,7 +61,7 @@ fi
 : ${evclass:=128} ${evtype:=3} ${zmax:=90}
 : ${proj:=AIT} ${ptsrc:=yes} ${coordsys:=CEL} ${irfs:=P8R2_SOURCE_V6}
 : ${USE_BL_EDISP:=true} ${refit:=no} ${plot:=no} ${optimizer:=NEWMINUIT}
-: ${optimizerTS:=${optimizer}}
+: ${optimizerTS:=${optimizer}} ${outtype:=cmap}
 
 if [ "${USE_BL_EDISP}" == "true" ]; then
     export USE_BL_EDISP
@@ -128,17 +128,11 @@ if [ -z "$enumbins" ]; then
     enumbins=$(echo "(l($emax)-l($emin))*10/l(10)+0.5" | bc -l)
     enumbins=$(echo "$enumbins/1" | bc)
 fi
-echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec evclass=$evclass evtype=$evtype srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins zmax=$zmax inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys irfs=$irfs optimizer=$optimizer slist="'$slist'"
+echo srcname=$srcname method=$method Ra=$Ra Dec=$Dec evclass=$evclass evtype=$evtype srcrad=$srcrad npix1=$npix1 npix2=$npix2 npix3=$npix3 binsz=$binsz binszts=$binszts emin=$emin emax=$emax enumbins=$enumbins zmax=$zmax inv_pixsize=$inv_pixsize proj=$proj ptsrc=$ptsrc coordsys=$coordsys irfs=$irfs optimizer=$optimizer slist="'$slist'" outtype=$outtype
 echo
 
-if [ "$nosrc" == "yes" ] || [ "$nosrc" == "1" ]; then
-# For calculating TS value of extended source
-    : ${srcname2:=${srcname}_nsrc}
-    : ${prefix2:=${srcname2}_${method}}
-else
-    : ${srcname2:=$srcname}
-    : ${prefix2:=$prefix}
-fi
+: ${srcname2:=$srcname}
+: ${prefix2:=${srcname2}_${method}}
 
 : ${scfile:=$(ls L*_SC00.fits)}
 if [ -z "$scfile" ]; then echo scfile not found; exit 1; fi
@@ -147,7 +141,7 @@ if [ -z "$scfile" ]; then echo scfile not found; exit 1; fi
 : ${lvtime:=${prefix}_ltcube.fits}
 : ${expmap:=${prefix}_expmap.fits}
 : ${bexpcube:=${prefix}_expcube.fits}
-: ${srcmdlin:=${srcname2}_input_model.xml}
+: ${srcmdlin:=${srcname}_input_model.xml}
 : ${srcmdlout:=${srcname2}_output_model_${emin}-${emax}.xml}
 : ${srcmap:=${prefix}_srcmaps.fits}
 if [ "$chngnm" == "yes" ] || [ "$chngnm" == "1" ]; then
@@ -161,13 +155,16 @@ else
 fi
 : ${srcmdlfix:=${srcmdlout/.xml/_fix.xml}}
 : ${tsmap:=${prefix2}_tsmap.fits}
+: ${cmapsml:=${prefix}_cmap_small.fits}
+: ${mdlmap:=${srcname2}_model_${outtype/c/}.fits}
+: ${resmap:=${srcname2}_residual.fits}
 
-echo evfile=$evfile scfile=$scfile cmap=$cmap ccube=$ccube lvtime=$lvtime expmap=$expmap bexpcube=$bexpcube srcmdlin=$srcmdlin srcmdlout=$srcmdlout srcmap=$srcmap fitso=$fitso results=$results specfile=$specfile tsmap=$tsmap 
+echo evfile=$evfile scfile=$scfile cmap=$cmap ccube=$ccube lvtime=$lvtime expmap=$expmap bexpcube=$bexpcube srcmdlin=$srcmdlin srcmdlout=$srcmdlout srcmap=$srcmap fitso=$fitso results=$results specfile=$specfile tsmap=$tsmap cmapsml=$cmapsml mdlmap=$mdlmap resmap=$resmap
 echo
 
 
-export method METHOD Ra Dec evclass evtype srcrad binsz binszts emin emax enumbins zmax inv_pixsize proj ptsrc coordsys irfs optimizer refit plot slist
-export evfile scfile bexpcube lvtime srcmdlin srcmdlout srcmap cmap ccube tsmap fitso
+export method METHOD Ra Dec evclass evtype srcrad binsz binszts emin emax enumbins zmax inv_pixsize proj ptsrc coordsys irfs optimizer refit plot slist outtype
+export evfile scfile bexpcube lvtime srcmdlin srcmdlout srcmap cmap ccube tsmap fitso cmapsml mdlmap resmap
 
 if [ -n "$export" ]; then
     echo -e "\e[32;1mExport done!\e[m";  echo
@@ -238,7 +235,7 @@ else echo gtbin CMAP was skipped; fi
 sleep 3; echo; echo
 
 if [ $skip -lt 4 ]; then
-    gtbin algorithm=CCUBE evfile=${evfile} outfile=${ccube} scfile=NONE \
+    gtbin algorithm=CCUBE evfile=${evfile} scfile=NONE outfile=${ccube} \
 	nxpix=${npix1} nypix=${npix1} binsz=${binsz} coordsys=${coordsys} \
 	xref=${Ra} yref=${Dec} axisrot=0 proj=${proj} ebinalg=LOG \
 	emin=${emin} emax=${emax} enumbins=${enumbins} || error "gtbin CCUBE"
@@ -308,6 +305,7 @@ sleep 3; echo; echo
 
 if [ $skip -lt 9 ] && [ $skipgttsmap -eq 0 ] ; then
     $(dirname $0)/FixParamInModel.sh ${srcmdlout} > ${srcmdlfix}
+    echo optimizerTS=${optimizerTS}
     gttsmap statistic=${METHOD} evfile=${evfile} scfile=${scfile} \
 	bexpmap=${bexpcube} expcube=${lvtime} srcmdl=${srcmdlfix} \
 	cmap=${ccube} outfile=${tsmap} irfs=CALDB optimizer=${optimizerTS} \
@@ -321,28 +319,29 @@ else echo gttsmap was skipped; fi
 sleep 3; echo; echo
 
 if [ $skipres -lt 1 ]; then
-    gtbin evfile=${evfile} \
-	scfile=NONE outfile=${prefix}_cmap_small.fits \
-	algorithm=CMAP nxpix=${npix1} nypix=${npix1} binsz=${binsz} \
-	coordsys=${coordsys} \
-	xref=${Ra} yref=${Dec} axisrot=0 proj=${proj}  || error "gtbin CMAP"
+    gtbin algorithm=CMAP evfile=${evfile} scfile=NONE outfile=${cmapsml} \
+	nxpix=${npix1} nypix=${npix1} binsz=${binsz} coordsys=${coordsys} \
+	xref=${Ra} yref=${Dec} axisrot=0 proj=${proj} || error "gtbin CMAP"
     echo "gtbin CMAP small done. elapsed time: $SECONDS s"
 else echo gtbin CMAP small was skipped; fi 
 
 sleep 3; echo; echo
 
 if [ $skipres -lt 2 ]; then
-    gtmodel srcmaps=${srcmap} srcmdl=${srcmdlout} \
-	outfile=${srcname2}_model_map.fits irfs=CALDB expcube=${lvtime} \
-	bexpmap=${bexpcube} || error gtmodel
+    gtmodel srcmaps=${srcmap} srcmdl=${srcmdlout} outfile=${mdlmap} \
+	irfs=CALDB expcube=${lvtime} bexpmap=${bexpcube} \
+	evtype=${evtype} outtype=${outtype} || error gtmodel
     echo "gtmodel done. elapsed time: $SECONDS s"
 else echo gtmodel was skipped; fi 
 
 sleep 3; echo; echo
 
 if [ $skipres -lt 3 ]; then
-    farith ${prefix}_cmap_small.fits ${srcname2}_model_map.fits \
-	${srcname2}_residual.fits SUB || error farith
+    if [ $outtype == cmap ]; then
+	farith ${cmapsml} ${mdlmap} ${resmap} SUB || error farith
+    else
+	farith ${ccube}   ${mdlmap} ${resmap} SUB || error farith
+    fi
     echo "farith done. elapsed time: $SECONDS s"
 else echo farith was skipped; fi
 
