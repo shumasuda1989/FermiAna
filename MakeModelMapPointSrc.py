@@ -24,12 +24,13 @@ content_xml='''<?xml version="1.0" standalone="no"?>
 '''
 
 
-def main(srcMaps=None,expCube=None,binnedExpMap=None,outname='modelcube.fits',
+def main(srcMaps=None,expCube=None,binnedExpMap=None,outname=None,
          IRFs='CALDB',index=2):
     if srcMaps is None:
         srcMaps=env['ccube']
         expCube=env['lvtime']
         binnedExpMap=env['bexpcube']
+        outname=env.get('mdlmap','modelcube.fits').replace('.fits','_ps.fits')
         IRFs=env.get('irfs','CALDB')
 
     obs = BinnedObs(srcMaps=srcMaps,expCube=expCube,
@@ -59,5 +60,4 @@ if __name__ == '__main__':
         ### count cube, lvtime cube, exposure cube, output model
         main(sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4])
     else:
-        out=env.get('mdlmap','modelcube.fits').replace('.fits','_ps.fits')
-        main(outname=out)
+        main()

@@ -35,7 +35,7 @@ def GetSkyMap(files):
         return data,w
 
     if not isinstance(files,list):
-        files=files.split(',')
+        files=[ s.strip() for s in files.split(',') ]
 
     print files
     d,ww=get(files[0])
@@ -105,13 +105,18 @@ def MakeResidmap(fcm,fmm,kernel=0.1,regfs=[],savefig=False,pointmodel=None):
         cmnorm = np.zeros(datacm.shape)
         mmnorm = np.zeros(datamm.shape)
 
+        ncol=int(np.sqrt(datacm.shape[0]-1))+1
+        nrow=(datacm.shape[0]-1)/ncol +1
         for i in range(datacm.shape[0]):
-            ax=plt.subplot(9,9,i+1)
+            ax=plt.subplot(nrow,ncol,i+1)
             ker_c = psfker_cnt[i]
             ker = psfker[i]
 
             mpix=ker[cpix,:]>ker[cpix,cpix]*thrs
             npix = int(max(3, np.round(np.sum(mpix) / 2.)))
+            # Ensure that there is an odd number of pixels in the kernel array
+            if cpix + npix + 1 >= cm[i].shape[0] or cpix - npix < 0:
+                npix -= 1
             spix = slice(cpix - npix, cpix + npix + 1)
 
             ker_c=ker_c[spix,spix]
