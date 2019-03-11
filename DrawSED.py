@@ -1,7 +1,7 @@
 import matplotlib
 from matplotlib import pyplot
 import numpy as np
-from numpy import array
+from numpy import array, nan
 
 from SpectralModel import SpectralModelXML, SpectralModel, SpectralModelSEDdict
 
